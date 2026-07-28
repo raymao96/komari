@@ -13,7 +13,8 @@ import (
 )
 
 const (
-	sqliteStorageVersionV4    = 4
+	sqliteStorageVersionV4              = 4
+	sqliteStorageVersionV4DigestHandoff = 5
 	sqliteV4HotWindow         = 5 * time.Minute
 	sqliteV4RollupFlushWindow = 30 * time.Minute
 )
@@ -48,6 +49,9 @@ func (s *Store) migrateSQLiteStorageV4(ctx context.Context) error {
 	if pointKind == "table" && rollupKind == "table" {
 		s.sqliteStorageV4 = true
 		if err := s.ensureSQLiteStorageV4(ctx); err != nil {
+			return err
+		}
+		if err := s.markSQLiteStorageV4DigestHandoff(ctx); err != nil {
 			return err
 		}
 		s.reportMigrationProgress(MigrationPhaseCompleted, 1, 1, 0)
@@ -130,14 +134,21 @@ func (s *Store) migrateSQLiteStorageV4(ctx context.Context) error {
 	}
 	s.reportMigrationProgress(MigrationPhaseCommitting, 1, 1, pointSourceCount+rollupSourceCount)
 	s.sqliteStorageV4 = true
-	s.reportMigrationProgress(MigrationPhaseReclaiming, 0, 1, pointSourceCount+rollupSourceCount)
+	_, handoffBuckets, err := s.migrateSQLiteV4RedundantRollupDigests(ctx, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	s.reportMigrationProgress(MigrationPhaseReclaiming, 0, 1, pointSourceCount+rollupSourceCount+handoffBuckets)
 	if err := s.fullSQLiteVacuum(ctx); err != nil {
 		// The V4 transaction is already fully validated and committed. A failed
 		// physical rewrite does not invalidate the logical migration.
 		log.Printf("metric: SQLite V4 post-migration vacuum skipped: %v", err)
 	}
-	s.reportMigrationProgress(MigrationPhaseReclaiming, 1, 1, pointSourceCount+rollupSourceCount)
-	s.reportMigrationProgress(MigrationPhaseCompleted, 1, 1, pointSourceCount+rollupSourceCount)
+	s.reportMigrationProgress(MigrationPhaseReclaiming, 1, 1, pointSourceCount+rollupSourceCount+handoffBuckets)
+	if err := s.markSQLiteStorageV4DigestHandoff(ctx); err != nil {
+		return err
+	}
+	s.reportMigrationProgress(MigrationPhaseCompleted, 1, 1, pointSourceCount+rollupSourceCount+handoffBuckets)
 	log.Printf("metric: migrated SQLite metric storage to V%d (%d raw points and %d rollups preserved bit-for-bit)", sqliteStorageVersionV4, pointSourceCount, rollupSourceCount)
 	return nil
 }
@@ -167,11 +178,32 @@ func (s *Store) ensureSQLiteStorageV4(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if migratedBlocks > 0 {
+	denseDigestBlocks, denseDigestBuckets, err := s.migrateSQLiteV4RollupDigestCodec(ctx)
+	if err != nil {
+		return err
+	}
+	handoffBlocks, handoffBuckets, err := s.migrateSQLiteV4RedundantRollupDigests(ctx, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	var autoVacuum int
+	if err := s.db.QueryRowContext(ctx, `PRAGMA auto_vacuum`).Scan(&autoVacuum); err != nil {
+		return fmt.Errorf("metric: inspect SQLite auto-vacuum mode: %w", err)
+	}
+	if migratedBlocks > 0 || denseDigestBlocks > 0 || handoffBlocks > 0 || autoVacuum != 2 {
+		s.reportMigrationProgress(MigrationPhaseReclaiming, 0, 1, migratedBuckets+denseDigestBuckets+handoffBuckets)
 		if err := s.fullSQLiteVacuum(ctx); err != nil {
-			return fmt.Errorf("metric: vacuum split SQLite V4 rollup storage: %w", err)
+			return fmt.Errorf("metric: vacuum SQLite V4 rollup storage after codec migration: %w", err)
 		}
-		log.Printf("metric: migrated %d SQLite V4 rollup blocks (%d buckets) to split summary/digest storage and reclaimed database space", migratedBlocks, migratedBuckets)
+		s.reportMigrationProgress(MigrationPhaseReclaiming, 1, 1, migratedBuckets+denseDigestBuckets+handoffBuckets)
+		log.Printf("metric: migrated %d SQLite V4 rollup blocks (%d buckets) to split storage, %d digest blocks (%d buckets) to dense codec, and %d blocks (%d buckets) to digest handoff storage; reclaimed database space", migratedBlocks, migratedBuckets, denseDigestBlocks, denseDigestBuckets, handoffBlocks, handoffBuckets)
+	}
+	return nil
+}
+
+func (s *Store) markSQLiteStorageV4DigestHandoff(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, sqliteStorageVersionV4DigestHandoff)); err != nil {
+		return fmt.Errorf("metric: mark SQLite V4 digest handoff migration: %w", err)
 	}
 	return nil
 }
@@ -606,6 +638,74 @@ func (s *Store) writeSQLiteV4BlocksTx(ctx context.Context, tx *sql.Tx, seriesID 
 			`INSERT INTO %s (series_id, start_nano, end_nano, point_count, codec, checksum, payload)
 			 VALUES (?, ?, ?, ?, ?, ?, ?)`, s.tables.pointBlocks,
 		), seriesID, encoded.startNano, encoded.endNano, encoded.count, encoded.codec, int64(encoded.checksum), encoded.payload); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) deleteSQLiteV4PointsBeforeCompactionTx(ctx context.Context, tx *sql.Tx, metricName string, beforeNano int64) error {
+	series, err := s.sqliteV4MatchingSeries(ctx, tx, metricName, "", nil)
+	if err != nil {
+		return err
+	}
+	type boundaryBlock struct {
+		startNano int64
+		endNano   int64
+		count     int
+		codec     int
+		checksum  int64
+		payload   []byte
+	}
+	for _, item := range series {
+		rows, err := tx.QueryContext(ctx, fmt.Sprintf(
+			"SELECT start_nano, end_nano, point_count, codec, checksum, payload FROM %s WHERE series_id = ? AND start_nano < ? AND end_nano >= ? ORDER BY start_nano",
+			s.tables.pointBlocks,
+		), item.id, beforeNano, beforeNano)
+		if err != nil {
+			return err
+		}
+		var boundaries []boundaryBlock
+		for rows.Next() {
+			var block boundaryBlock
+			if err := rows.Scan(&block.startNano, &block.endNano, &block.count, &block.codec, &block.checksum, &block.payload); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			boundaries = append(boundaries, block)
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM "+s.tables.pointBlocks+" WHERE series_id = ? AND end_nano < ?", item.id, beforeNano); err != nil {
+			return err
+		}
+		for _, block := range boundaries {
+			points, err := decodeSQLiteV4Block(block.codec, block.count, uint32(block.checksum), block.payload)
+			if err != nil {
+				return fmt.Errorf("metric: decode SQLite V4 compaction boundary series=%d start=%d: %w", item.id, block.startNano, err)
+			}
+			if len(points) == 0 || points[0].timestamp != block.startNano || points[len(points)-1].timestamp != block.endNano {
+				return fmt.Errorf("metric: SQLite V4 compaction boundary mismatch for series=%d start=%d", item.id, block.startNano)
+			}
+			kept := make([]sqliteV4BlockPoint, 0, len(points))
+			for _, point := range points {
+				if point.timestamp >= beforeNano {
+					kept = append(kept, point)
+				}
+			}
+			if _, err := tx.ExecContext(ctx, "DELETE FROM "+s.tables.pointBlocks+" WHERE series_id = ? AND start_nano = ?", item.id, block.startNano); err != nil {
+				return err
+			}
+			if err := s.writeSQLiteV4BlocksTx(ctx, tx, item.id, kept); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM "+s.tables.pointValues+" WHERE series_id = ? AND ts_nano < ?", item.id, beforeNano); err != nil {
 			return err
 		}
 	}
