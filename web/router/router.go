@@ -250,4 +250,20 @@ func registerAdminRoutes(r *gin.Engine) {
 		pingTask.POST("/edit", jsonRpc.Bind("admin:editPingTask"))
 		pingTask.POST("/order", jsonRpc.Bind("admin:orderPingTask"))
 	}
+
+	returnRoute := g.Group("/return-route")
+	{
+		returnRoute.GET("/", jsonRpc.Bind("admin:getReturnRouteOverview"))
+		returnRoute.GET("/summary", jsonRpc.Bind("admin:getReturnRouteSummary"))
+		returnRoute.POST("/tasks/query", jsonRpc.Bind("admin:queryReturnRouteTasks"))
+		returnRoute.POST("/events/query", jsonRpc.Bind("admin:queryReturnRouteEvents"))
+		returnRoute.POST("/add", jsonRpc.Bind("admin:addReturnRouteTask"))
+		returnRoute.POST("/edit", jsonRpc.Bind("admin:editReturnRouteTask"))
+		returnRoute.POST("/delete", jsonRpc.Bind("admin:deleteReturnRouteTask"))
+		returnRoute.POST("/probe", jsonRpc.Bind("admin:probeReturnRouteNow"))
+		returnRoute.GET("/rules", jsonRpc.Bind("admin:getReturnRouteRules"))
+		returnRoute.POST("/rules/reload", jsonRpc.Bind("admin:reloadReturnRouteRules"))
+		returnRoute.POST("/rules/update", jsonRpc.Bind("admin:updateReturnRouteRules"))
+		returnRoute.POST("/rules/refresh", jsonRpc.Bind("admin:refreshReturnRouteBGPRules"))
+	}
 }

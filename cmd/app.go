@@ -485,6 +485,12 @@ func (a *App) RunMetricStorageUpgrade(summary metric.SQLiteMigrationSummary) (bo
 
 // StartBackground 启动后台工作：定时任务。
 func (a *App) StartBackground() error {
+	stopReturnRouteRules := tasks.StartReturnRouteRuleWatcher()
+	a.addCleanup("return-route-rules", func(context.Context) error {
+		stopReturnRouteRules()
+		return nil
+	})
+
 	registerScheduledWork()
 	a.addCleanup("scheduler", func(context.Context) error {
 		corn.StopAll()
@@ -651,6 +657,9 @@ func (a *App) onFatal(err error) {
 func registerScheduledWork() {
 	if err := tasks.ReloadPingSchedule(); err != nil {
 		logger.ErrorArgs("server", "Failed to reload ping schedule:", err)
+	}
+	if err := tasks.ReloadReturnRouteSchedule(); err != nil {
+		logger.ErrorArgs("server", "Failed to reload return route schedule:", err)
 	}
 	if err := d_notification.ReloadLoadNotificationSchedule(); err != nil {
 		logger.ErrorArgs("server", "Failed to reload load notification schedule:", err)
