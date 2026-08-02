@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -103,6 +104,67 @@ func TestReplaceHTMLLanguage(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			if got := replaceHTMLLanguage(tt.html, tt.language); got != tt.want {
 				t.Fatalf("replaceHTMLLanguage() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInjectThemeChangeReload(t *testing.T) {
+	withBody := injectThemeChangeReload(`<html><body>theme</body></html>`)
+	if !strings.Contains(withBody, themeChangeReloadScript+"</body>") {
+		t.Fatalf("theme reload listener was not inserted before body close: %q", withBody)
+	}
+	if got := strings.Count(injectThemeChangeReload(withBody), themeChangeReloadScript); got != 1 {
+		t.Fatalf("theme reload listener count = %d, want 1", got)
+	}
+	withoutBody := injectThemeChangeReload(`<html>theme</html>`)
+	if !strings.HasSuffix(withoutBody, themeChangeReloadScript) {
+		t.Fatalf("theme reload listener was not appended: %q", withoutBody)
+	}
+}
+
+func TestRenderPublicDocumentTitle(t *testing.T) {
+	tests := map[string]struct {
+		html  string
+		title string
+		want  string
+	}{
+		"replace legacy title": {
+			html:  `<html><head><title>Komari Monitor</title></head><body></body></html>`,
+			title: "Nomi",
+			want:  `<title>Nomi</title>`,
+		},
+		"replace title with attributes and whitespace": {
+			html:  "<html><head><TITLE data-theme=\"nezha\">\n Komari Monitor \n</TITLE></head><body></body></html>",
+			title: "Nomi",
+			want:  `<title>Nomi</title>`,
+		},
+		"insert missing title": {
+			html:  `<html><head><meta charset="utf-8"></head><body></body></html>`,
+			title: "Nomi",
+			want:  `<meta charset="utf-8"><title>Nomi</title></head>`,
+		},
+		"escape title markup": {
+			html:  `<html><head><title>old</title></head><body></body></html>`,
+			title: `Nomi </title><script>alert(1)</script>`,
+			want:  `<title>Nomi &lt;/title&gt;&lt;script&gt;alert(1)&lt;/script&gt;</title>`,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := renderPublicDocumentTitle(tt.html, tt.title)
+			if !strings.Contains(got, tt.want) {
+				t.Fatalf("renderPublicDocumentTitle() = %q, want fragment %q", got, tt.want)
+			}
+			if strings.Count(got, documentTitleSyncMarker) != 1 {
+				t.Fatalf("title synchronization marker count = %d, want 1", strings.Count(got, documentTitleSyncMarker))
+			}
+			if strings.Contains(got, `const expectedTitle="Nomi </title>`) {
+				t.Fatalf("title was embedded into script without safe escaping: %q", got)
+			}
+			if rerendered := renderPublicDocumentTitle(got, tt.title); strings.Count(rerendered, documentTitleSyncMarker) != 1 {
+				t.Fatalf("title synchronization was injected more than once: %q", rerendered)
 			}
 		})
 	}
