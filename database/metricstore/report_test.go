@@ -86,8 +86,8 @@ func TestWriteReportStoresRawMetricsAndResetAwareTraffic(t *testing.T) {
 		t.Fatalf("write reset report: %v", err)
 	}
 
-	assertMetricValues(t, s, MetricTrafficUp, report.UUID, base.Add(-time.Second), base.Add(time.Minute), []float64{0, 50, 20})
-	assertMetricValues(t, s, MetricTrafficDown, report.UUID, base.Add(-time.Second), base.Add(time.Minute), []float64{0, 60, 30})
+	assertMetricValues(t, s, MetricTrafficUp, report.UUID, base.Add(-time.Second), base.Add(time.Minute), []float64{0, 50, 0})
+	assertMetricValues(t, s, MetricTrafficDown, report.UUID, base.Add(-time.Second), base.Add(time.Minute), []float64{0, 60, 0})
 	assertMetricValues(t, s, MetricNetTotalUp, report.UUID, base.Add(-time.Second), base.Add(time.Minute), []float64{100, 150, 20})
 
 	gpuPoints, err := s.Query(ctx, metric.Query{
@@ -208,6 +208,31 @@ func TestFullReportQueueRejectsNewReportWithoutDroppingData(t *testing.T) {
 	}
 }
 
+func TestDrainReportQueueUsesCurrentDepthAndHonorsLimit(t *testing.T) {
+	empty := make(chan v1.Report, 8_192)
+	if got := drainReportQueue(empty, 8_192); got != nil {
+		t.Fatalf("empty queue drain = %#v, want nil", got)
+	}
+	if allocations := testing.AllocsPerRun(1_000, func() {
+		_ = drainReportQueue(empty, 8_192)
+	}); allocations != 0 {
+		t.Fatalf("empty queue drain allocations = %v, want 0", allocations)
+	}
+
+	queue := make(chan v1.Report, 8_192)
+	for _, uuid := range []string{"a", "b", "c"} {
+		queue <- v1.Report{UUID: uuid}
+	}
+	got := drainReportQueue(queue, 2)
+	if len(got) != 2 || cap(got) != 2 || got[0].UUID != "a" || got[1].UUID != "b" {
+		t.Fatalf("limited queue drain = %#v (cap %d)", got, cap(got))
+	}
+	remaining := drainReportQueue(queue, 8_192)
+	if len(remaining) != 1 || cap(remaining) != 1 || remaining[0].UUID != "c" {
+		t.Fatalf("remaining queue drain = %#v (cap %d)", remaining, cap(remaining))
+	}
+}
+
 func TestRecordReconstructionUsesMetricSpecificAggregation(t *testing.T) {
 	ctx := context.Background()
 	s := useReportTestStore(t, nil)
@@ -237,6 +262,31 @@ func TestRecordReconstructionUsesMetricSpecificAggregation(t *testing.T) {
 	}
 }
 
+func TestLoadMetricProjectionKeepsAverageAggregation(t *testing.T) {
+	ctx := context.Background()
+	s := useReportTestStore(t, nil)
+	base := time.Now().UTC().Truncate(time.Hour)
+	entityID := "node-load-projection"
+	if err := s.WriteBatch(ctx, []metric.Point{
+		{MetricName: MetricCPU, EntityID: entityID, Timestamp: base.Add(time.Second), Value: 10},
+		{MetricName: MetricCPU, EntityID: entityID, Timestamp: base.Add(2 * time.Second), Value: 90},
+		{MetricName: MetricRAM, EntityID: entityID, Timestamp: base.Add(time.Second), Value: 999},
+	}); err != nil {
+		t.Fatalf("write projected metrics: %v", err)
+	}
+
+	records, err := GetRecordsByClientAndTimeForLoadType(ctx, entityID, base, base.Add(48*time.Hour), "cpu")
+	if err != nil {
+		t.Fatalf("query CPU projection: %v", err)
+	}
+	if len(records) != 1 || records[0].Cpu != 50 {
+		t.Fatalf("CPU projection = %#v, want average 50", records)
+	}
+	if records[0].Ram != 0 {
+		t.Fatalf("CPU projection unexpectedly decoded RAM: %#v", records[0])
+	}
+}
+
 func TestTrafficCounterDelta(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -247,7 +297,7 @@ func TestTrafficCounterDelta(t *testing.T) {
 		{name: "previous zero", current: 120, previous: 0, want: 120},
 		{name: "monotonic counter", current: 250, previous: 200, want: 50},
 		{name: "unchanged counter", current: 100, previous: 100, want: 0},
-		{name: "counter reset", current: 15, previous: 250, want: 15},
+		{name: "counter reset", current: 15, previous: 250, want: 0},
 		{name: "negative current", current: -1, previous: 100, want: 0},
 		{name: "negative previous", current: 15, previous: -1, want: 0},
 	}
@@ -257,6 +307,20 @@ func TestTrafficCounterDelta(t *testing.T) {
 				t.Fatalf("TrafficCounterDelta(%d, %d) = %d, want %d", test.current, test.previous, got, test.want)
 			}
 		})
+	}
+}
+
+func TestReportTrafficCounterDeltaRejectsUnexplainedPositiveJump(t *testing.T) {
+	const gib = int64(1024 * 1024 * 1024)
+
+	if got := ReportTrafficCounterDelta(2*gib, gib, 0, 3*time.Second); got != 0 {
+		t.Fatalf("unexplained positive jump = %d, want 0", got)
+	}
+	if got := ReportTrafficCounterDelta(2*gib, gib, 300*1024*1024, time.Second); got != gib {
+		t.Fatalf("rate-supported positive jump = %d, want %d", got, gib)
+	}
+	if got := ReportTrafficCounterDelta(gib/2, gib, 300*1024*1024, time.Second); got != 0 {
+		t.Fatalf("counter decrease = %d, want 0", got)
 	}
 }
 

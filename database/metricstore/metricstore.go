@@ -974,6 +974,10 @@ func recordMetricNamesForLoadType(loadType string) []string {
 		return []string{MetricCPU}
 	case "disk":
 		return []string{MetricDisk}
+	case "net_in", "netin":
+		return []string{MetricNetIn}
+	case "net_out", "netout":
+		return []string{MetricNetOut}
 	case "network":
 		return []string{MetricNetIn, MetricNetOut, MetricNetTotalUp, MetricNetTotalDown}
 	case "process":
@@ -1116,8 +1120,10 @@ func applyRecordMetricValue(rec *models.Record, metricName string, value float64
 		rec.NetTotalDown = int64(value)
 	case MetricTrafficUp:
 		rec.TrafficUp = int64(value)
+		rec.TrafficUpSet = true
 	case MetricTrafficDown:
 		rec.TrafficDown = int64(value)
+		rec.TrafficDownSet = true
 	case MetricProcess:
 		rec.Process = int(value)
 	case MetricConnections:
