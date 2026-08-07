@@ -82,6 +82,7 @@ func deleteClient(db *gorm.DB, clientUuid string) (bool, error) {
 			"traffic calibration adjustments": &models.TrafficCalibrationAdjustment{},
 			"ping loss notifications":         &models.PingLossNotification{},
 			"task results":                    &models.TaskResult{},
+			"deployment profile":              &models.ClientDeploymentProfile{},
 		} {
 			if !tx.Migrator().HasTable(model) {
 				continue
@@ -297,13 +298,7 @@ func CreateClient() (clientUUID, token string, err error) {
 	token = utils.GenerateToken()
 	clientUUID = uuid.New().String()
 
-	client := models.Client{
-		UUID:      clientUUID,
-		Token:     token,
-		Name:      "client_" + clientUUID[0:8],
-		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
-	}
+	client := newClient(clientUUID, token, "client_"+clientUUID[0:8], time.Now().UTC())
 
 	err = db.Create(&client).Error
 	if err != nil {
@@ -322,13 +317,7 @@ func CreateClientWithName(name string) (clientUUID, token string, err error) {
 	db := dbcore.GetDBInstance()
 	token = utils.GenerateToken()
 	clientUUID = uuid.New().String()
-	client := models.Client{
-		UUID:      clientUUID,
-		Token:     token,
-		Name:      name,
-		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
-	}
+	client := newClient(clientUUID, token, name, time.Now().UTC())
 
 	err = db.Create(&client).Error
 	if err != nil {
@@ -338,6 +327,17 @@ func CreateClientWithName(name string) (clientUUID, token string, err error) {
 		logger.ErrorArgs("clients", "Failed to apply default-on ping tasks to new client:", err)
 	}
 	return clientUUID, token, nil
+}
+
+func newClient(clientUUID, token, name string, now time.Time) models.Client {
+	return models.Client{
+		UUID:             clientUUID,
+		Token:            token,
+		Name:             name,
+		TrafficLimitType: "sum",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
 }
 
 /*
@@ -420,10 +420,49 @@ func getClientBasicInfo(query *gorm.DB) (clients []models.Client, err error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := applyClientDisplayFieldsAndPersist(query.Session(&gorm.Session{NewDB: true}), clients, time.Now().UTC()); err != nil {
+	baseDB := query.Session(&gorm.Session{NewDB: true})
+	if err := applyClientDisplayFieldsAndPersist(baseDB, clients, time.Now().UTC()); err != nil {
+		return nil, err
+	}
+	if err := applyClientDeploymentStatuses(baseDB, clients); err != nil {
 		return nil, err
 	}
 	return clients, nil
+}
+
+func applyClientDeploymentStatuses(db *gorm.DB, clientList []models.Client) error {
+	if len(clientList) == 0 {
+		return nil
+	}
+	clientUUIDs := make([]string, 0, len(clientList))
+	for i := range clientList {
+		clientUUIDs = append(clientUUIDs, clientList[i].UUID)
+	}
+	var rows []struct {
+		Client         string
+		DeliveryStatus string
+	}
+	if err := db.Model(&models.ClientDeploymentProfile{}).
+		Select("client", "delivery_status").
+		Where("client IN ?", clientUUIDs).
+		Find(&rows).Error; err != nil {
+		return err
+	}
+	statusByClient := make(map[string]string, len(rows))
+	for _, row := range rows {
+		status := row.DeliveryStatus
+		if status == "" {
+			status = DeploymentDeliverySaved
+		}
+		switch status {
+		case DeploymentDeliverySaved, DeploymentDeliverySent, DeploymentDeliveryApplied, DeploymentDeliveryFailed:
+			statusByClient[row.Client] = status
+		}
+	}
+	for i := range clientList {
+		clientList[i].DeploymentStatus = statusByClient[clientList[i].UUID]
+	}
+	return nil
 }
 
 func SaveClient(updates map[string]interface{}) error {

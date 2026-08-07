@@ -989,11 +989,38 @@ func (s *Store) syncSQLiteV4RedundantRollupDigestsTx(ctx context.Context, tx *sq
 }
 
 func (s *Store) querySQLiteV4Rollups(ctx context.Context, q querier, metricName, entityID string, tags map[string]string, resolution, lower, upper int64, needDigest bool) ([]storedRollup, error) {
-	series, err := s.sqliteV4MatchingSeries(ctx, q, metricName, entityID, tags)
+	var result []storedRollup
+	err := s.visitSQLiteV4Rollups(ctx, q, metricName, entityID, tags, resolution, lower, upper, needDigest,
+		func(item sqliteV4Series, record sqliteV4RollupRecord) error {
+			bucketData, err := sqliteV4RollupBucketFromRecord(record, item, needDigest)
+			if err != nil {
+				return err
+			}
+			result = append(result, storedRollup{
+				entityID: item.entityID, bucket: record.bucketNano, bucketData: bucketData,
+			})
+			return nil
+		})
 	if err != nil {
 		return nil, err
 	}
-	var result []storedRollup
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].bucket != result[j].bucket {
+			return result[i].bucket < result[j].bucket
+		}
+		if result[i].entityID != result[j].entityID {
+			return result[i].entityID < result[j].entityID
+		}
+		return result[i].bucketData.tagsHash < result[j].bucketData.tagsHash
+	})
+	return result, nil
+}
+
+func (s *Store) visitSQLiteV4Rollups(ctx context.Context, q querier, metricName, entityID string, tags map[string]string, resolution, lower, upper int64, needDigest bool, visit func(sqliteV4Series, sqliteV4RollupRecord) error) error {
+	series, err := s.sqliteV4MatchingSeries(ctx, q, metricName, entityID, tags)
+	if err != nil {
+		return err
+	}
 	for _, item := range series {
 		byBucket := make(map[int64]sqliteV4RollupRecord)
 		blockColumns := "b.start_nano, b.end_nano, b.bucket_count, b.codec, b.checksum, b.payload"
@@ -1007,7 +1034,7 @@ func (s *Store) querySQLiteV4Rollups(ctx context.Context, q querier, metricName,
 			blockColumns, s.tables.rollupBlocks, s.tables.rollupAxes,
 		), item.id, resolution, lower, upper)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		for blockRows.Next() {
 			var startNano, endNano, checksum, digestChecksum int64
@@ -1021,7 +1048,7 @@ func (s *Store) querySQLiteV4Rollups(ctx context.Context, q querier, metricName,
 			destinations = append(destinations, &axisID, &axisCodec, &axisChecksum, &axisPayload)
 			if err := blockRows.Scan(destinations...); err != nil {
 				_ = blockRows.Close()
-				return nil, err
+				return err
 			}
 			records, err := s.decodeSQLiteRollupBlockCached(
 				codec, count, uint32(checksum), payload, axisID, axisCodec, axisChecksum, axisPayload,
@@ -1029,11 +1056,11 @@ func (s *Store) querySQLiteV4Rollups(ctx context.Context, q querier, metricName,
 			)
 			if err != nil {
 				_ = blockRows.Close()
-				return nil, fmt.Errorf("metric: decode SQLite V4 rollup block series=%d start=%d: %w", item.id, startNano, err)
+				return fmt.Errorf("metric: decode SQLite V4 rollup block series=%d start=%d: %w", item.id, startNano, err)
 			}
 			if len(records) == 0 || records[0].bucketNano != startNano || records[len(records)-1].bucketNano != endNano {
 				_ = blockRows.Close()
-				return nil, fmt.Errorf("metric: SQLite V4 rollup block boundary mismatch for series=%d start=%d", item.id, startNano)
+				return fmt.Errorf("metric: SQLite V4 rollup block boundary mismatch for series=%d start=%d", item.id, startNano)
 			}
 			for _, record := range records {
 				if record.bucketNano >= lower && record.bucketNano <= upper {
@@ -1043,10 +1070,10 @@ func (s *Store) querySQLiteV4Rollups(ctx context.Context, q querier, metricName,
 		}
 		if err := blockRows.Err(); err != nil {
 			_ = blockRows.Close()
-			return nil, err
+			return err
 		}
 		if err := blockRows.Close(); err != nil {
-			return nil, err
+			return err
 		}
 		hotRows, err := q.QueryContext(ctx, fmt.Sprintf(
 			`SELECT bucket_nano, count, loss_count, sum, sum_sq, min_val, max_val, first_val, first_ts,
@@ -1055,22 +1082,22 @@ func (s *Store) querySQLiteV4Rollups(ctx context.Context, q querier, metricName,
 			s.tables.rollupValues,
 		), item.id, resolution, lower, upper)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		for hotRows.Next() {
 			record, err := scanSQLiteV4RollupRecord(hotRows)
 			if err != nil {
 				_ = hotRows.Close()
-				return nil, err
+				return err
 			}
 			byBucket[record.bucketNano] = record
 		}
 		if err := hotRows.Err(); err != nil {
 			_ = hotRows.Close()
-			return nil, err
+			return err
 		}
 		if err := hotRows.Close(); err != nil {
-			return nil, err
+			return err
 		}
 		buckets := make([]int64, 0, len(byBucket))
 		for bucket := range byBucket {
@@ -1079,27 +1106,189 @@ func (s *Store) querySQLiteV4Rollups(ctx context.Context, q querier, metricName,
 		sort.Slice(buckets, func(i, j int) bool { return buckets[i] < buckets[j] })
 		for _, bucket := range buckets {
 			record := byBucket[bucket]
-			bucketData, err := sqliteV4RollupBucketFromRecord(record, item, needDigest)
-			if err != nil {
-				return nil, err
+			if err := visit(item, record); err != nil {
+				return err
 			}
-			result = append(result, storedRollup{
-				entityID:   item.entityID,
-				bucket:     record.bucketNano,
-				bucketData: bucketData,
-			})
 		}
 	}
-	sort.Slice(result, func(i, j int) bool {
-		if result[i].bucket != result[j].bucket {
-			return result[i].bucket < result[j].bucket
+	return nil
+}
+
+// foldSQLiteV4Rollups merges non-percentile block records directly into the
+// requested output buckets. It avoids materializing storedRollup objects and a
+// second full-result sort on the common dashboard/report read path.
+func (s *Store) foldSQLiteV4Rollups(ctx context.Context, q querier, metricName, entityID string, tags map[string]string, resolution, lower, upper int64, groups map[rollupKey]*rollupBucket, outputInterval time.Duration, compression float64, preserveSeries bool) error {
+	size := outputInterval.Nanoseconds()
+	series, err := s.sqliteV4MatchingSeries(ctx, q, metricName, entityID, tags)
+	if err != nil || len(series) == 0 {
+		return err
+	}
+	merge := func(item sqliteV4Series, record sqliteV4RollupRecord) {
+		key := foldedRollupKey(item.entityID, item.tagsHash, floorDivNano(record.bucketNano, size), preserveSeries)
+		bucket := groups[key]
+		if bucket == nil {
+			bucket = newRollupBucketWithDigest(compression, false)
+			bucket.tagsHash = item.tagsHash
+			bucket.tagsJSON = item.tagsJSON
+			groups[key] = bucket
 		}
-		if result[i].entityID != result[j].entityID {
-			return result[i].entityID < result[j].entityID
+		stored := rollupBucket{
+			count: record.count, lossCount: record.lossCount,
+			sum: math.Float64frombits(record.sumBits), sumSq: math.Float64frombits(record.sumSqBits),
+			min: math.Float64frombits(record.minBits), max: math.Float64frombits(record.maxBits),
+			firstVal: math.Float64frombits(record.firstBits), firstTS: record.firstTS,
+			lastVal: math.Float64frombits(record.lastBits), lastTS: record.lastTS,
+			tagsHash: item.tagsHash, tagsJSON: item.tagsJSON,
 		}
-		return result[i].bucketData.tagsHash < result[j].bucketData.tagsHash
-	})
-	return result, nil
+		bucket.mergeStored(&stored)
+	}
+
+	type hotKey struct {
+		seriesID int64
+		bucket   int64
+	}
+	type hotRecord struct {
+		seriesID int64
+		record   sqliteV4RollupRecord
+	}
+	const seriesBatchSize = 64
+	for start := 0; start < len(series); start += seriesBatchSize {
+		end := start + seriesBatchSize
+		if end > len(series) {
+			end = len(series)
+		}
+		batch := series[start:end]
+		seriesByID := make(map[int64]sqliteV4Series, len(batch))
+		for _, item := range batch {
+			seriesByID[item.id] = item
+		}
+		seriesWhere, seriesArgs := sqliteV4SeriesIDClause(batch)
+
+		hotArgs := append(append([]any{}, seriesArgs...), resolution, lower, upper)
+		hotRows, err := q.QueryContext(ctx, fmt.Sprintf(
+			`SELECT series_id, bucket_nano, count, loss_count, sum, sum_sq, min_val, max_val,
+			        first_val, first_ts, last_val, last_ts
+			 FROM %s WHERE series_id IN (%s) AND resolution_nano = ? AND bucket_nano >= ? AND bucket_nano <= ?
+			 ORDER BY series_id, bucket_nano`,
+			s.tables.rollupValues, seriesWhere,
+		), hotArgs...)
+		if err != nil {
+			return err
+		}
+		hotRecords := make([]hotRecord, 0)
+		hotOverrides := make(map[hotKey]struct{})
+		for hotRows.Next() {
+			var seriesID int64
+			var record sqliteV4RollupRecord
+			var sum, sumSq, minValue, maxValue, firstValue, lastValue float64
+			if err := hotRows.Scan(
+				&seriesID, &record.bucketNano, &record.count, &record.lossCount,
+				&sum, &sumSq, &minValue, &maxValue,
+				&firstValue, &record.firstTS, &lastValue, &record.lastTS,
+			); err != nil {
+				_ = hotRows.Close()
+				return err
+			}
+			record.sumBits = math.Float64bits(sum)
+			record.sumSqBits = math.Float64bits(sumSq)
+			record.minBits = math.Float64bits(minValue)
+			record.maxBits = math.Float64bits(maxValue)
+			record.firstBits = math.Float64bits(firstValue)
+			record.lastBits = math.Float64bits(lastValue)
+			hotRecords = append(hotRecords, hotRecord{seriesID: seriesID, record: record})
+			hotOverrides[hotKey{seriesID: seriesID, bucket: record.bucketNano}] = struct{}{}
+		}
+		if err := hotRows.Err(); err != nil {
+			_ = hotRows.Close()
+			return err
+		}
+		if err := hotRows.Close(); err != nil {
+			return err
+		}
+
+		blockArgs := append(append([]any{}, seriesArgs...), resolution, lower, upper)
+		blockRows, err := q.QueryContext(ctx, fmt.Sprintf(
+			`SELECT b.series_id, b.start_nano, b.end_nano, b.bucket_count, b.codec, b.checksum, b.payload,
+			        b.axis_id, a.codec, a.checksum, a.payload
+			 FROM %s AS b LEFT JOIN %s AS a ON a.id = b.axis_id
+			 WHERE b.series_id IN (%s) AND b.resolution_nano = ? AND b.end_nano >= ? AND b.start_nano <= ?
+			 ORDER BY b.series_id, b.start_nano`,
+			s.tables.rollupBlocks, s.tables.rollupAxes, seriesWhere,
+		), blockArgs...)
+		if err != nil {
+			return err
+		}
+		for blockRows.Next() {
+			var seriesID, blockStart, blockEnd, checksum int64
+			var count, codec int
+			var payload, axisPayload []byte
+			var axisID, axisCodec, axisChecksum sql.NullInt64
+			if err := blockRows.Scan(
+				&seriesID, &blockStart, &blockEnd, &count, &codec, &checksum, &payload,
+				&axisID, &axisCodec, &axisChecksum, &axisPayload,
+			); err != nil {
+				_ = blockRows.Close()
+				return err
+			}
+			item := seriesByID[seriesID]
+			if dashboardQueryCache(ctx) != nil {
+				first, last, err := s.visitSQLiteDashboardRollupBlock(ctx,
+					codec, count, uint32(checksum), payload, axisID, axisCodec, axisChecksum, axisPayload,
+					func(record sqliteV4RollupRecord) error {
+						if record.bucketNano < lower || record.bucketNano > upper {
+							return nil
+						}
+						if _, overridden := hotOverrides[hotKey{seriesID: seriesID, bucket: record.bucketNano}]; overridden {
+							return nil
+						}
+						merge(item, record)
+						return nil
+					},
+				)
+				if err != nil {
+					_ = blockRows.Close()
+					return fmt.Errorf("metric: decode SQLite V4 dashboard rollup block series=%d start=%d: %w", seriesID, blockStart, err)
+				}
+				if first != blockStart || last != blockEnd {
+					_ = blockRows.Close()
+					return fmt.Errorf("metric: SQLite V4 dashboard rollup block boundary mismatch for series=%d start=%d", seriesID, blockStart)
+				}
+				continue
+			}
+			records, err := s.decodeSQLiteRollupBlockCached(
+				codec, count, uint32(checksum), payload, axisID, axisCodec, axisChecksum, axisPayload,
+				0, 0, nil, false,
+			)
+			if err != nil {
+				_ = blockRows.Close()
+				return fmt.Errorf("metric: decode SQLite V4 rollup block series=%d start=%d: %w", seriesID, blockStart, err)
+			}
+			if len(records) == 0 || records[0].bucketNano != blockStart || records[len(records)-1].bucketNano != blockEnd {
+				_ = blockRows.Close()
+				return fmt.Errorf("metric: SQLite V4 rollup block boundary mismatch for series=%d start=%d", seriesID, blockStart)
+			}
+			for _, record := range records {
+				if record.bucketNano < lower || record.bucketNano > upper {
+					continue
+				}
+				if _, overridden := hotOverrides[hotKey{seriesID: seriesID, bucket: record.bucketNano}]; overridden {
+					continue
+				}
+				merge(item, record)
+			}
+		}
+		if err := blockRows.Err(); err != nil {
+			_ = blockRows.Close()
+			return err
+		}
+		if err := blockRows.Close(); err != nil {
+			return err
+		}
+		for _, hot := range hotRecords {
+			merge(seriesByID[hot.seriesID], hot.record)
+		}
+	}
+	return nil
 }
 
 func sqliteV4RollupBucketFromRecord(record sqliteV4RollupRecord, series sqliteV4Series, needDigest bool) (*rollupBucket, error) {

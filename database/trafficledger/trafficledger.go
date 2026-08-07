@@ -44,11 +44,13 @@ type HourlyUsage struct {
 }
 
 type DeltaRecord struct {
-	Time         time.Time
-	NetTotalUp   int64
-	NetTotalDown int64
-	TrafficUp    int64
-	TrafficDown  int64
+	Time           time.Time
+	NetTotalUp     int64
+	NetTotalDown   int64
+	TrafficUp      int64
+	TrafficDown    int64
+	TrafficUpSet   bool
+	TrafficDownSet bool
 }
 
 type usageCalculator func(context.Context, string, time.Time, time.Time) (Usage, error)
@@ -469,6 +471,53 @@ func MetricUsageByHour(ctx context.Context, clientID string, start, end time.Tim
 	return usageByHourFromRecords(records, previous)
 }
 
+// MetricUsageByHourBatch calculates the same per-client totals as
+// MetricUsageByHour while sharing the underlying metric scans across clients.
+func MetricUsageByHourBatch(ctx context.Context, clientIDs []string, start, end time.Time) (map[string]Usage, map[string][]HourlyUsage, error) {
+	if end.Before(start) {
+		return nil, nil, fmt.Errorf("traffic metric range end precedes start")
+	}
+	records, baselines, err := metricstore.GetTrafficRecordsByClientsAndTime(ctx, clientIDs, start, end)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	recordsByClient := make(map[string][]DeltaRecord, len(clientIDs))
+	for _, record := range records {
+		recordsByClient[record.Client] = append(recordsByClient[record.Client], DeltaRecord{
+			Time: record.Time, NetTotalUp: record.NetTotalUp, NetTotalDown: record.NetTotalDown,
+			TrafficUp: record.TrafficUp, TrafficDown: record.TrafficDown,
+			TrafficUpSet: record.TrafficUpSet, TrafficDownSet: record.TrafficDownSet,
+		})
+	}
+
+	usageByClient := make(map[string]Usage, len(clientIDs))
+	hourlyByClient := make(map[string][]HourlyUsage, len(clientIDs))
+	seen := make(map[string]struct{}, len(clientIDs))
+	for _, clientID := range clientIDs {
+		if clientID == "" {
+			continue
+		}
+		if _, ok := seen[clientID]; ok {
+			continue
+		}
+		seen[clientID] = struct{}{}
+		var previous *DeltaRecord
+		if baseline, ok := baselines[clientID]; ok {
+			previous = &DeltaRecord{
+				Time: baseline.Time, NetTotalUp: baseline.NetTotalUp, NetTotalDown: baseline.NetTotalDown,
+			}
+		}
+		usage, hourly, err := usageByHourFromRecords(recordsByClient[clientID], previous)
+		if err != nil {
+			return nil, nil, fmt.Errorf("calculate traffic for client %s: %w", clientID, err)
+		}
+		usageByClient[clientID] = usage
+		hourlyByClient[clientID] = hourly
+	}
+	return usageByClient, hourlyByClient, nil
+}
+
 func usageByHourFromRecords(records []DeltaRecord, previous *DeltaRecord) (Usage, []HourlyUsage, error) {
 	hasPrevious := previous != nil
 	var previousUp, previousDown int64
@@ -476,12 +525,17 @@ func usageByHourFromRecords(records []DeltaRecord, previous *DeltaRecord) (Usage
 		previousUp = previous.NetTotalUp
 		previousDown = previous.NetTotalDown
 	}
+	forced := correlatedCounterDiscontinuities(records, hasPrevious, previousUp, previousDown)
 	upDeltas := trafficDeltasByRecord(records, hasPrevious, previousUp,
 		func(record DeltaRecord) int64 { return record.NetTotalUp },
-		func(record DeltaRecord) int64 { return record.TrafficUp })
+		func(record DeltaRecord) int64 { return record.TrafficUp },
+		func(record DeltaRecord) bool { return record.TrafficUpSet },
+		forced)
 	downDeltas := trafficDeltasByRecord(records, hasPrevious, previousDown,
 		func(record DeltaRecord) int64 { return record.NetTotalDown },
-		func(record DeltaRecord) int64 { return record.TrafficDown })
+		func(record DeltaRecord) int64 { return record.TrafficDown },
+		func(record DeltaRecord) bool { return record.TrafficDownSet },
+		forced)
 
 	byHour := make(map[time.Time]Usage)
 	total := Usage{}
@@ -534,12 +588,17 @@ func usagesByDayFromRecords(start, end time.Time, records []DeltaRecord, previou
 		previousUp = previous.NetTotalUp
 		previousDown = previous.NetTotalDown
 	}
+	forced := correlatedCounterDiscontinuities(records, hasPrevious, previousUp, previousDown)
 	upDeltas := trafficDeltasByRecord(records, hasPrevious, previousUp,
 		func(record DeltaRecord) int64 { return record.NetTotalUp },
-		func(record DeltaRecord) int64 { return record.TrafficUp })
+		func(record DeltaRecord) int64 { return record.TrafficUp },
+		func(record DeltaRecord) bool { return record.TrafficUpSet },
+		forced)
 	downDeltas := trafficDeltasByRecord(records, hasPrevious, previousDown,
 		func(record DeltaRecord) int64 { return record.NetTotalDown },
-		func(record DeltaRecord) int64 { return record.TrafficDown })
+		func(record DeltaRecord) int64 { return record.TrafficDown },
+		func(record DeltaRecord) bool { return record.TrafficDownSet },
+		forced)
 	for i, record := range records {
 		key := dayKey(record.Time)
 		usage, ok := result[key]
@@ -561,11 +620,13 @@ func metricRecordsAndBaseline(ctx context.Context, clientID string, start, end t
 	records := make([]DeltaRecord, 0, len(recordsFromStore))
 	for _, record := range recordsFromStore {
 		records = append(records, DeltaRecord{
-			Time:         record.Time,
-			NetTotalUp:   record.NetTotalUp,
-			NetTotalDown: record.NetTotalDown,
-			TrafficUp:    record.TrafficUp,
-			TrafficDown:  record.TrafficDown,
+			Time:           record.Time,
+			NetTotalUp:     record.NetTotalUp,
+			NetTotalDown:   record.NetTotalDown,
+			TrafficUp:      record.TrafficUp,
+			TrafficDown:    record.TrafficDown,
+			TrafficUpSet:   record.TrafficUpSet,
+			TrafficDownSet: record.TrafficDownSet,
 		})
 	}
 	sort.Slice(records, func(i, j int) bool {
@@ -601,20 +662,27 @@ func SumTrafficDeltas(records []DeltaRecord, previous *DeltaRecord) (int64, int6
 		previousUp = previous.NetTotalUp
 		previousDown = previous.NetTotalDown
 	}
+	forced := correlatedCounterDiscontinuities(records, hasPrevious, previousUp, previousDown)
 	up := sumInt64s(trafficDeltasByRecord(records, hasPrevious, previousUp,
 		func(record DeltaRecord) int64 { return record.NetTotalUp },
-		func(record DeltaRecord) int64 { return record.TrafficUp }))
+		func(record DeltaRecord) int64 { return record.TrafficUp },
+		func(record DeltaRecord) bool { return record.TrafficUpSet }, forced))
 	down := sumInt64s(trafficDeltasByRecord(records, hasPrevious, previousDown,
 		func(record DeltaRecord) int64 { return record.NetTotalDown },
-		func(record DeltaRecord) int64 { return record.TrafficDown }))
+		func(record DeltaRecord) int64 { return record.TrafficDown },
+		func(record DeltaRecord) bool { return record.TrafficDownSet }, forced))
 	return up, down
 }
 
-func trafficDeltasByRecord(records []DeltaRecord, hasBaseline bool, baseline int64, totalValue, storedDelta func(DeltaRecord) int64) []int64 {
+func trafficDeltasByRecord(records []DeltaRecord, hasBaseline bool, baseline int64, totalValue, storedDelta func(DeltaRecord) int64, storedDeltaSet func(DeltaRecord) bool, forcedDiscontinuities map[int]struct{}) []int64 {
 	deltas := make([]int64, len(records))
 	for i := 0; i < len(records); i++ {
 		current := totalValue(records[i])
 		if hasBaseline && current < baseline {
+			if _, forced := forcedDiscontinuities[i]; forced {
+				baseline = current
+				continue
+			}
 			if recoveryIndex := findCounterRecovery(records, i+1, baseline, records[i].Time, totalValue); recoveryIndex >= 0 {
 				recovered := totalValue(records[recoveryIndex])
 				deltas[recoveryIndex] += recovered - baseline
@@ -622,11 +690,13 @@ func trafficDeltasByRecord(records []DeltaRecord, hasBaseline bool, baseline int
 				i = recoveryIndex
 				continue
 			}
+			baseline = current
+			continue
 		}
 
 		delta := storedDelta(records[i])
 		if hasBaseline {
-			delta = TrafficDeltaOrFallback(delta, current, baseline)
+			delta = TrafficDeltaOrFallback(delta, storedDeltaSet(records[i]), current, baseline)
 			if current >= baseline {
 				directDelta := current - baseline
 				if delta > trafficDeltaUpperBound(directDelta) {
@@ -639,6 +709,25 @@ func trafficDeltasByRecord(records []DeltaRecord, hasBaseline bool, baseline int
 		hasBaseline = true
 	}
 	return deltas
+}
+
+func correlatedCounterDiscontinuities(records []DeltaRecord, hasBaseline bool, previousUp, previousDown int64) map[int]struct{} {
+	forced := make(map[int]struct{})
+	for i, record := range records {
+		if hasBaseline && record.NetTotalUp < previousUp && record.NetTotalDown < previousDown {
+			upRecovery := findCounterRecovery(records, i+1, previousUp, record.Time,
+				func(item DeltaRecord) int64 { return item.NetTotalUp })
+			downRecovery := findCounterRecovery(records, i+1, previousDown, record.Time,
+				func(item DeltaRecord) int64 { return item.NetTotalDown })
+			if upRecovery < 0 || downRecovery < 0 || upRecovery != downRecovery {
+				forced[i] = struct{}{}
+			}
+		}
+		previousUp = record.NetTotalUp
+		previousDown = record.NetTotalDown
+		hasBaseline = true
+	}
+	return forced
 }
 
 func sumInt64s(values []int64) int64 {
@@ -668,8 +757,11 @@ func trafficDeltaUpperBound(directDelta int64) int64 {
 	return directDelta*trafficDeltaAnomalyMultiplier + trafficDeltaAnomalyAllowance
 }
 
-func TrafficDeltaOrFallback(storedDelta, currentTotal, previousTotal int64) int64 {
-	if storedDelta > 0 {
+func TrafficDeltaOrFallback(storedDelta int64, storedDeltaSet bool, currentTotal, previousTotal int64) int64 {
+	if storedDeltaSet {
+		if storedDelta < 0 {
+			return 0
+		}
 		return storedDelta
 	}
 	return metricstore.TrafficCounterDelta(currentTotal, previousTotal)

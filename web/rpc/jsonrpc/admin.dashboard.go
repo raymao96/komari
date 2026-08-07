@@ -3,20 +3,21 @@ package jsonrpc
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
-	"sync"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/komari-monitor/komari/database/clients"
 	"github.com/komari-monitor/komari/database/dbcore"
 	"github.com/komari-monitor/komari/database/metricstore"
 	"github.com/komari-monitor/komari/database/models"
+	"github.com/komari-monitor/komari/database/tasks"
 	"github.com/komari-monitor/komari/database/trafficledger"
 	"github.com/komari-monitor/komari/pkg/rpc"
 	agent_runtime "github.com/komari-monitor/komari/web/agent"
 )
-
-const dashboardCacheTTL = 15 * time.Second
 
 type dashboardOfflineNode struct {
 	UUID     string     `json:"uuid"`
@@ -45,13 +46,24 @@ type dashboardTrafficHour struct {
 	Down int64  `json:"down"`
 }
 
+type dashboardTrafficRankItem struct {
+	UUID      string `json:"uuid"`
+	Name      string `json:"name"`
+	Up        int64  `json:"up"`
+	Down      int64  `json:"down"`
+	Billable  int64  `json:"billable"`
+	DetailURL string `json:"detail_url,omitempty"`
+}
+
 type dashboardTrafficSummary struct {
-	TodayUp       int64                  `json:"today_up"`
-	TodayDown     int64                  `json:"today_down"`
-	TodayBillable int64                  `json:"today_billable"`
-	Hourly        []dashboardTrafficHour `json:"hourly"`
-	Daily         []dashboardTrafficDay  `json:"daily"`
-	HistoryReady  bool                   `json:"history_ready"`
+	TodayUp       int64                      `json:"today_up"`
+	TodayDown     int64                      `json:"today_down"`
+	TodayBillable int64                      `json:"today_billable"`
+	Hourly        []dashboardTrafficHour     `json:"hourly"`
+	Daily         []dashboardTrafficDay      `json:"daily"`
+	Ranking       []dashboardTrafficRankItem `json:"ranking"`
+	HistoryReady  bool                       `json:"history_ready"`
+	Error         string                     `json:"error,omitempty"`
 }
 
 type dashboardStorageSummary struct {
@@ -62,19 +74,64 @@ type dashboardStorageSummary struct {
 	LastCompactedAt *time.Time `json:"last_compacted_at"`
 }
 
-type dashboardResponse struct {
-	Servers     dashboardServerSummary  `json:"servers"`
-	Traffic     dashboardTrafficSummary `json:"traffic"`
-	Database    databaseStatusResponse  `json:"database"`
-	Storage     dashboardStorageSummary `json:"storage"`
-	GeneratedAt time.Time               `json:"generated_at"`
+type dashboardReturnRouteSummary struct {
+	tasks.ReturnRouteSummary
+	LatestEvent *tasks.ReturnRouteEventItem `json:"latest_event,omitempty"`
+	Error       string                      `json:"error,omitempty"`
 }
 
-var dashboardCache struct {
-	sync.Mutex
-	value dashboardResponse
-	at    time.Time
-	valid bool
+type dashboardResourceRankItem struct {
+	UUID      string  `json:"uuid"`
+	Name      string  `json:"name"`
+	CPU       float64 `json:"cpu"`
+	Memory    float64 `json:"memory"`
+	Disk      float64 `json:"disk"`
+	DetailURL string  `json:"detail_url,omitempty"`
+}
+
+type dashboardResourceSummary struct {
+	CPU    []dashboardResourceRankItem `json:"cpu"`
+	Memory []dashboardResourceRankItem `json:"memory"`
+	Disk   []dashboardResourceRankItem `json:"disk"`
+}
+
+type dashboardResponse struct {
+	Servers     dashboardServerSummary      `json:"servers"`
+	Resources   dashboardResourceSummary    `json:"resources"`
+	Database    databaseStatusResponse      `json:"database"`
+	Storage     dashboardStorageSummary     `json:"storage"`
+	ReturnRoute dashboardReturnRouteSummary `json:"return_route"`
+	Alerts      dashboardAlertSummaries     `json:"alerts"`
+	GeneratedAt time.Time                   `json:"generated_at"`
+}
+
+type dashboardSummarySections uint8
+
+const (
+	dashboardSectionServers dashboardSummarySections = 1 << iota
+	dashboardSectionResources
+	dashboardSectionStorage
+	dashboardSectionReturnRoute
+	dashboardSectionAlerts
+	dashboardSectionAll = dashboardSectionServers | dashboardSectionResources |
+		dashboardSectionStorage | dashboardSectionReturnRoute | dashboardSectionAlerts
+)
+
+type dashboardChartSections uint8
+
+const (
+	dashboardChartTraffic dashboardChartSections = 1 << iota
+	dashboardChartLatency
+	dashboardChartLatencyJitter
+	dashboardChartPacketLoss
+	dashboardChartAll = dashboardChartTraffic | dashboardChartLatency | dashboardChartLatencyJitter | dashboardChartPacketLoss
+)
+
+type dashboardChartsResponse struct {
+	Traffic     dashboardTrafficSummary    `json:"traffic"`
+	Latency     dashboardLatencySummary    `json:"latency"`
+	PacketLoss  dashboardPacketLossSummary `json:"packet_loss"`
+	GeneratedAt time.Time                  `json:"generated_at"`
 }
 
 func init() {
@@ -83,56 +140,264 @@ func init() {
 		Summary: "Get the cached administration dashboard summary",
 		Returns: "DashboardSummary",
 	})
+	RegisterWithGroupAndMeta("getDashboardCharts", rpc.RoleAdmin, adminGetDashboardCharts, &rpc.MethodMeta{
+		Name:    "admin:getDashboardCharts",
+		Summary: "Get cached administration dashboard chart data",
+		Returns: "DashboardCharts",
+	})
 }
 
-func adminGetDashboard(ctx context.Context, _ *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
+func adminGetDashboard(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
 	now := time.Now().UTC()
-	dashboardCache.Lock()
-	defer dashboardCache.Unlock()
-	if dashboardCache.valid && now.Sub(dashboardCache.at) < dashboardCacheTTL {
-		return dashboardCache.value, nil
-	}
-
-	value, err := buildDashboard(ctx, now)
+	sections, rankingLimit := parseDashboardSummaryRequest(req)
+	settings := loadDashboardSettings()
+	value, err := buildDashboardCached(ctx, now, sections, rankingLimit, time.Duration(settings.RefreshSeconds)*time.Second)
 	if err != nil {
 		return nil, rpc.MakeError(rpc.InternalError, err.Error(), nil)
 	}
-	dashboardCache.value = value
-	dashboardCache.at = now
-	dashboardCache.valid = true
-	return value, nil
+	return decorateDashboardSummaryNavigation(value), nil
 }
 
-func buildDashboard(ctx context.Context, now time.Time) (dashboardResponse, error) {
-	clientList, err := clients.GetAllClientBasicInfo()
-	if err != nil {
-		return dashboardResponse{}, fmt.Errorf("list dashboard clients: %w", err)
-	}
+func adminGetDashboardCharts(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
+	now := time.Now().UTC()
+	sections, rankingLimit := parseDashboardChartRequest(req)
+	settings := loadDashboardSettings()
+	return decorateDashboardNavigation(buildDashboardChartsCached(ctx, now, sections, rankingLimit, time.Duration(settings.ChartRefreshSeconds)*time.Second)), nil
+}
 
-	traffic, err := loadDashboardTraffic(ctx, clientList, now)
-	if err != nil {
-		return dashboardResponse{}, err
+func buildDashboard(ctx context.Context, now time.Time, sections dashboardSummarySections, rankingLimit int) (dashboardResponse, error) {
+	result := dashboardResponse{GeneratedAt: now}
+	needsClients := sections&(dashboardSectionServers|dashboardSectionResources|dashboardSectionAlerts) != 0
+	var clientList []models.Client
+	var err error
+	if needsClients {
+		clientList, err = clients.GetAllClientBasicInfo()
+		if err != nil {
+			return dashboardResponse{}, fmt.Errorf("list dashboard clients: %w", err)
+		}
 	}
-	main := mainDatabaseStatus()
-	monitoring := monitoringDatabaseStatus(ctx)
-	legacySize := int64(0)
-	if main.Size != nil {
-		legacySize = *main.Size
+	if sections&dashboardSectionServers != 0 {
+		result.Servers = buildDashboardServers(clientList)
 	}
-
-	return dashboardResponse{
-		Servers: buildDashboardServers(clientList),
-		Traffic: traffic,
-		Database: databaseStatusResponse{
+	if sections&dashboardSectionResources != 0 {
+		result.Resources = buildDashboardResources(clientList, rankingLimit)
+	}
+	if sections&dashboardSectionStorage != 0 {
+		main := mainDatabaseStatus()
+		monitoring := monitoringDatabaseStatus(ctx)
+		legacySize := int64(0)
+		if main.Size != nil {
+			legacySize = *main.Size
+		}
+		result.Database = databaseStatusResponse{
 			Type:       main.Driver,
 			Size:       legacySize,
 			Main:       main,
 			Monitoring: monitoring,
 			LocalTotal: localDatabaseTotal(main, monitoring),
-		},
-		Storage:     buildDashboardStorage(ctx, main, monitoring),
-		GeneratedAt: now,
-	}, nil
+		}
+		result.Storage = buildDashboardStorage(ctx, main, monitoring)
+	}
+	if sections&dashboardSectionReturnRoute != 0 {
+		result.ReturnRoute = buildDashboardReturnRoute()
+	}
+	if sections&dashboardSectionAlerts != 0 {
+		result.Alerts = buildDashboardAlerts(clientList, now)
+	}
+	return result, nil
+}
+
+func buildDashboardCharts(ctx context.Context, now time.Time, sections dashboardChartSections, rankingLimit int) dashboardChartsResponse {
+	result := dashboardChartsResponse{GeneratedAt: now}
+	if sections == 0 {
+		return result
+	}
+	clientList, err := clients.GetAllClientBasicInfo()
+	if err != nil {
+		message := fmt.Sprintf("list dashboard clients: %v", err)
+		if sections&dashboardChartTraffic != 0 {
+			result.Traffic.Error = message
+		}
+		if sections&dashboardChartLatency != 0 {
+			result.Latency.Error = message
+		}
+		if sections&dashboardChartLatencyJitter != 0 {
+			result.Latency.JitterError = message
+		}
+		if sections&dashboardChartPacketLoss != 0 {
+			result.PacketLoss.Error = message
+		}
+		return result
+	}
+	if sections&dashboardChartTraffic != 0 {
+		if result.Traffic, err = loadDashboardTraffic(ctx, clientList, now, rankingLimit); err != nil {
+			result.Traffic = dashboardTrafficSummary{Error: err.Error()}
+		}
+	}
+	if sections&dashboardChartLatency != 0 {
+		if result.Latency, err = loadDashboardLatency(ctx, clientList, now, rankingLimit); err != nil {
+			result.Latency.Error = err.Error()
+		}
+	}
+	if sections&dashboardChartLatencyJitter != 0 {
+		if result.Latency.JitterRanking, err = loadDashboardLatencyJitter(ctx, clientList, now, rankingLimit); err != nil {
+			result.Latency.JitterError = err.Error()
+		}
+	}
+	if sections&dashboardChartPacketLoss != 0 {
+		if result.PacketLoss, err = loadDashboardPacketLoss(ctx, clientList, now, rankingLimit); err != nil {
+			result.PacketLoss.Error = err.Error()
+		}
+	}
+	return result
+}
+
+func parseDashboardSummaryRequest(req *rpc.JsonRpcRequest) (dashboardSummarySections, int) {
+	rawSections, _ := rpc.GetParamAs[string](req, "sections")
+	sections := dashboardSummarySections(0)
+	if strings.TrimSpace(rawSections) == "" {
+		sections = dashboardSectionAll
+	} else {
+		for _, raw := range strings.Split(rawSections, ",") {
+			switch strings.TrimSpace(raw) {
+			case "servers":
+				sections |= dashboardSectionServers
+			case "resources":
+				sections |= dashboardSectionResources
+			case "storage":
+				sections |= dashboardSectionStorage
+			case "return_route":
+				sections |= dashboardSectionReturnRoute
+			case "alerts":
+				sections |= dashboardSectionAlerts
+			}
+		}
+	}
+
+	return sections, parseDashboardRankingLimit(req)
+}
+
+func parseDashboardChartRequest(req *rpc.JsonRpcRequest) (dashboardChartSections, int) {
+	rawSections, _ := rpc.GetParamAs[string](req, "sections")
+	if strings.TrimSpace(rawSections) == "" {
+		return dashboardChartAll, parseDashboardRankingLimit(req)
+	}
+	sections := dashboardChartSections(0)
+	for _, raw := range strings.Split(rawSections, ",") {
+		switch strings.TrimSpace(raw) {
+		case "traffic":
+			sections |= dashboardChartTraffic
+		case "latency":
+			sections |= dashboardChartLatency
+		case "latency_jitter":
+			sections |= dashboardChartLatencyJitter
+		case "packet_loss":
+			sections |= dashboardChartPacketLoss
+		}
+	}
+	return sections, parseDashboardRankingLimit(req)
+}
+
+func parseDashboardRankingLimit(req *rpc.JsonRpcRequest) int {
+	if rawLimit, ok := rpc.GetParamAs[string](req, "limit"); ok {
+		if parsed, err := strconv.Atoi(rawLimit); err == nil && dashboardRankingLimitAllowed(parsed) {
+			return parsed
+		}
+	}
+	return 5
+}
+
+func buildDashboardResources(clientList []models.Client, limit int) dashboardResourceSummary {
+	if !dashboardRankingLimitAllowed(limit) {
+		limit = 5
+	}
+	reports := agent_runtime.GetLatestReport()
+	items := make([]dashboardResourceRankItem, 0, len(clientList))
+	for _, client := range clientList {
+		report := reports[client.UUID]
+		if report == nil {
+			continue
+		}
+		name := strings.TrimSpace(client.Name)
+		if name == "" {
+			name = client.UUID
+		}
+		items = append(items, dashboardResourceRankItem{
+			UUID:   client.UUID,
+			Name:   name,
+			CPU:    dashboardPercent(report.CPU.Usage),
+			Memory: dashboardUsagePercent(report.Ram.Used, report.Ram.Total),
+			Disk:   dashboardUsagePercent(report.Disk.Used, report.Disk.Total),
+		})
+	}
+	return dashboardResourceSummary{
+		CPU:    dashboardTopResources(items, limit, func(item dashboardResourceRankItem) float64 { return item.CPU }),
+		Memory: dashboardTopResources(items, limit, func(item dashboardResourceRankItem) float64 { return item.Memory }),
+		Disk:   dashboardTopResources(items, limit, func(item dashboardResourceRankItem) float64 { return item.Disk }),
+	}
+}
+
+func dashboardUsagePercent(used, total int64) float64 {
+	if used <= 0 || total <= 0 {
+		return 0
+	}
+	return dashboardPercent(float64(used) / float64(total) * 100)
+}
+
+func dashboardPercent(value float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value <= 0 {
+		return 0
+	}
+	return math.Min(100, value)
+}
+
+// dashboardTopResources keeps only a bounded Top-N list while scanning reports.
+// With at most 20 entries this avoids three full sorts and large temporary slices.
+func dashboardTopResources(
+	items []dashboardResourceRankItem,
+	limit int,
+	value func(dashboardResourceRankItem) float64,
+) []dashboardResourceRankItem {
+	top := make([]dashboardResourceRankItem, 0, limit)
+	for _, item := range items {
+		insertAt := len(top)
+		for index, current := range top {
+			if value(item) > value(current) || (value(item) == value(current) && item.Name < current.Name) {
+				insertAt = index
+				break
+			}
+		}
+		if insertAt >= limit {
+			continue
+		}
+		if len(top) < limit {
+			top = append(top, dashboardResourceRankItem{})
+		}
+		copy(top[insertAt+1:], top[insertAt:len(top)-1])
+		top[insertAt] = item
+	}
+	return top
+}
+
+func buildDashboardReturnRoute() dashboardReturnRouteSummary {
+	result := dashboardReturnRouteSummary{}
+	summary, err := tasks.GetReturnRouteSummary()
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	result.ReturnRouteSummary = summary
+
+	events, err := tasks.QueryReturnRouteEvents(tasks.ReturnRouteEventQuery{Page: 1, PageSize: 1})
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	if len(events.Events) > 0 {
+		latest := events.Events[0]
+		result.LatestEvent = &latest
+	}
+	return result
 }
 
 func buildDashboardStorage(ctx context.Context, statuses ...databaseStorageStatus) dashboardStorageSummary {
@@ -193,7 +458,7 @@ func buildDashboardServers(clientList []models.Client) dashboardServerSummary {
 	return summary
 }
 
-func loadDashboardTraffic(ctx context.Context, clientList []models.Client, now time.Time) (dashboardTrafficSummary, error) {
+func loadDashboardTraffic(ctx context.Context, clientList []models.Client, now time.Time, rankingLimit int) (dashboardTrafficSummary, error) {
 	today := trafficledger.BeijingDay(now)
 	start := today.AddDate(0, 0, -(trafficledger.DashboardHistoryDays - 1))
 	db := dbcore.GetDBInstance()
@@ -211,18 +476,18 @@ func loadDashboardTraffic(ctx context.Context, clientList []models.Client, now t
 
 	todayUsage := make(map[string]trafficledger.Usage, len(clientList))
 	todayHourly := make(map[string][]trafficledger.HourlyUsage, len(clientList))
+	clientIDs := make([]string, 0, len(clientList))
 	for _, client := range clientList {
-		usage, hourly, err := trafficledger.MetricUsageByHour(ctx, client.UUID, today.UTC(), now.UTC())
-		if err != nil {
-			return dashboardTrafficSummary{}, fmt.Errorf("read today's traffic for client %s: %w", client.UUID, err)
-		}
-		todayUsage[client.UUID] = usage
-		todayHourly[client.UUID] = hourly
+		clientIDs = append(clientIDs, client.UUID)
 	}
-	return summarizeDashboardTraffic(clientList, rows, todayUsage, todayHourly, adjustments, now), nil
+	todayUsage, todayHourly, err = trafficledger.MetricUsageByHourBatch(ctx, clientIDs, today.UTC(), now.UTC())
+	if err != nil {
+		return dashboardTrafficSummary{}, fmt.Errorf("read today's dashboard traffic: %w", err)
+	}
+	return summarizeDashboardTraffic(clientList, rows, todayUsage, todayHourly, adjustments, now, rankingLimit), nil
 }
 
-func summarizeDashboardTraffic(clientList []models.Client, rows []models.TrafficDailyLedger, todayUsage map[string]trafficledger.Usage, todayHourly map[string][]trafficledger.HourlyUsage, adjustments map[string]trafficledger.SignedUsage, now time.Time) dashboardTrafficSummary {
+func summarizeDashboardTraffic(clientList []models.Client, rows []models.TrafficDailyLedger, todayUsage map[string]trafficledger.Usage, todayHourly map[string][]trafficledger.HourlyUsage, adjustments map[string]trafficledger.SignedUsage, now time.Time, rankingLimit int) dashboardTrafficSummary {
 	today := trafficledger.BeijingDay(now)
 	start := today.AddDate(0, 0, -(trafficledger.DashboardHistoryDays - 1))
 	clientsByID := make(map[string]models.Client, len(clientList))
@@ -278,6 +543,16 @@ func summarizeDashboardTraffic(clientList []models.Client, rows []models.Traffic
 		summary.TodayUp += usage.Up
 		summary.TodayDown += usage.Down
 		summary.TodayBillable += billable
+		name := strings.TrimSpace(client.Name)
+		if name == "" {
+			name = client.UUID
+		}
+		rankingBillable := trafficledger.BillableUsage(client.TrafficLimitType, usage.Up, usage.Down)
+		if rankingBillable > 0 {
+			summary.Ranking = dashboardTopTraffic(summary.Ranking, dashboardTrafficRankItem{
+				UUID: client.UUID, Name: name, Up: usage.Up, Down: usage.Down, Billable: rankingBillable,
+			}, rankingLimit)
+		}
 		for _, hourly := range trafficledger.ApplyHourlyAdjustment(todayHourly[client.UUID], adjustment, now) {
 			hour := hourly.Hour.In(trafficledger.BeijingLocation).Hour()
 			if hour >= 0 && hour < len(summary.Hourly) {
@@ -294,4 +569,26 @@ func summarizeDashboardTraffic(clientList []models.Client, rows []models.Traffic
 	expectedRows := len(clientList) * (trafficledger.DashboardHistoryDays - 1)
 	summary.HistoryReady = len(seen) == expectedRows
 	return summary
+}
+
+func dashboardTopTraffic(top []dashboardTrafficRankItem, item dashboardTrafficRankItem, limit int) []dashboardTrafficRankItem {
+	if !dashboardRankingLimitAllowed(limit) {
+		limit = 5
+	}
+	insertAt := len(top)
+	for index, current := range top {
+		if item.Billable > current.Billable || (item.Billable == current.Billable && item.Name < current.Name) {
+			insertAt = index
+			break
+		}
+	}
+	if insertAt >= limit {
+		return top
+	}
+	if len(top) < limit {
+		top = append(top, dashboardTrafficRankItem{})
+	}
+	copy(top[insertAt+1:], top[insertAt:len(top)-1])
+	top[insertAt] = item
+	return top
 }
