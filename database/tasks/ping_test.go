@@ -3,9 +3,11 @@ package tasks
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/komari-monitor/komari/database/metricstore"
 	"github.com/komari-monitor/komari/database/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -65,10 +67,13 @@ func TestUpdatePingTaskOrderAcceptsEmptyBatchWithoutDatabase(t *testing.T) {
 }
 
 func TestDeletePingTaskRowsCleansMatchingPingLossNotifications(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:delete-ping-task-cleanup?mode=memory&cache=shared&_foreign_keys=off"), &gorm.Config{
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "delete-ping-task-cleanup.db")+"?_foreign_keys=off"), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, sqlDB.Close()) })
 	require.NoError(t, db.AutoMigrate(
 		&models.Client{},
 		&models.PingTask{},
@@ -107,4 +112,78 @@ func TestDeletePingTaskRowsCleansMatchingPingLossNotifications(t *testing.T) {
 	assert.Zero(t, legacyCount)
 	require.NoError(t, db.Table("ping_records").Where("task_id = ?", tasks[1].Id).Count(&legacyCount).Error)
 	assert.Equal(t, int64(1), legacyCount)
+}
+
+func TestEditPingTasksRemovesAlertsForUnassignedClients(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "edit-ping-task-alert-cleanup.db")+"?_foreign_keys=off"), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, sqlDB.Close()) })
+	require.NoError(t, db.AutoMigrate(
+		&models.Client{},
+		&models.PingTask{},
+		&models.PingLossNotification{},
+	))
+	require.NoError(t, db.Create([]models.Client{
+		{UUID: "client-a", Token: "token-a", Name: "Server A"},
+		{UUID: "client-b", Token: "token-b", Name: "Server B"},
+		{UUID: "client-c", Token: "token-c", Name: "Server C"},
+	}).Error)
+
+	tasks := []models.PingTask{
+		{Name: "Task 1", Clients: models.StringArray{"client-a", "client-b", "client-c"}, Type: "icmp", Target: "1.1.1.1", Interval: 60},
+		{Name: "Task 2", Clients: models.StringArray{"client-b"}, Type: "icmp", Target: "8.8.8.8", Interval: 60},
+	}
+	require.NoError(t, db.Create(&tasks).Error)
+	require.NoError(t, db.Create([]models.PingLossNotification{
+		{Client: "client-a", TaskId: tasks[0].Id, Enable: true, WindowSeconds: 60, LossThreshold: 5, MinimumSamples: 1, CooldownSeconds: 300},
+		{Client: "client-b", TaskId: tasks[0].Id, Enable: true, WindowSeconds: 60, LossThreshold: 5, MinimumSamples: 1, CooldownSeconds: 300},
+		{Client: "client-c", TaskId: tasks[0].Id, Enable: true, WindowSeconds: 60, LossThreshold: 5, MinimumSamples: 1, CooldownSeconds: 300},
+		{Client: "client-b", TaskId: tasks[1].Id, Enable: true, WindowSeconds: 60, LossThreshold: 5, MinimumSamples: 1, CooldownSeconds: 300},
+	}).Error)
+	require.NoError(t, db.Exec("CREATE TABLE ping_records (client TEXT NOT NULL, task_id INTEGER NOT NULL)").Error)
+	require.NoError(t, db.Exec("INSERT INTO ping_records (client, task_id) VALUES (?, ?), (?, ?), (?, ?), (?, ?)",
+		"client-a", tasks[0].Id,
+		"client-b", tasks[0].Id,
+		"client-c", tasks[0].Id,
+		"client-b", tasks[1].Id,
+	).Error)
+
+	updated := tasks[0]
+	updated.Clients = models.StringArray{"client-a", "client-c"}
+	removed, err := editPingTasks(db, []*models.PingTask{&updated})
+	require.NoError(t, err)
+	assert.Equal(t, []metricstore.PingAssignment{{Client: "client-b", TaskID: tasks[0].Id}}, removed)
+
+	var gotTask models.PingTask
+	require.NoError(t, db.First(&gotTask, tasks[0].Id).Error)
+	assert.Equal(t, models.StringArray{"client-a", "client-c"}, gotTask.Clients)
+
+	var remaining []models.PingLossNotification
+	require.NoError(t, db.Order("task_id ASC").Order("client ASC").Find(&remaining).Error)
+	require.Len(t, remaining, 3)
+	assert.Equal(t, []struct {
+		taskID uint
+		client string
+	}{
+		{taskID: tasks[0].Id, client: "client-a"},
+		{taskID: tasks[0].Id, client: "client-c"},
+		{taskID: tasks[1].Id, client: "client-b"},
+	}, []struct {
+		taskID uint
+		client string
+	}{
+		{taskID: remaining[0].TaskId, client: remaining[0].Client},
+		{taskID: remaining[1].TaskId, client: remaining[1].Client},
+		{taskID: remaining[2].TaskId, client: remaining[2].Client},
+	})
+	var removedLegacyCount int64
+	require.NoError(t, db.Table("ping_records").Where("client = ? AND task_id = ?", "client-b", tasks[0].Id).Count(&removedLegacyCount).Error)
+	assert.Zero(t, removedLegacyCount)
+	var retainedLegacyCount int64
+	require.NoError(t, db.Table("ping_records").Count(&retainedLegacyCount).Error)
+	assert.Equal(t, int64(3), retainedLegacyCount)
 }
