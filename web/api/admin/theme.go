@@ -20,14 +20,16 @@ import (
 	"github.com/komari-monitor/komari/database/dbcore"
 	"github.com/komari-monitor/komari/database/models"
 	"github.com/komari-monitor/komari/pkg/config"
+	logger "github.com/komari-monitor/komari/utils/log"
 	"github.com/komari-monitor/komari/web/api"
 	"github.com/komari-monitor/komari/web/public"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
 	maxThemeArchiveFiles  = 10000
 	maxThemeArchiveSize   = 128 << 20
-	maxThemeUploadSize    = maxThemeArchiveSize + (1 << 20)
 	maxThemeFileSize      = 128 << 20
 	maxThemeExtractedSize = 512 << 20
 	maxThemeManifestSize  = 1 << 20
@@ -68,37 +70,6 @@ func temporaryThemeArchive(data []byte, prefix string) (string, error) {
 		os.Remove(name)
 		return "", err
 	}
-	return name, nil
-}
-
-func temporaryThemeArchiveFromReader(reader io.Reader, prefix string) (string, error) {
-	file, err := os.CreateTemp("", prefix+"-*.zip")
-	if err != nil {
-		return "", err
-	}
-	name := file.Name()
-	remove := true
-	defer func() {
-		_ = file.Close()
-		if remove {
-			_ = os.Remove(name)
-		}
-	}()
-
-	written, err := io.Copy(file, io.LimitReader(reader, maxThemeArchiveSize+1))
-	if err != nil {
-		return "", err
-	}
-	if written > maxThemeArchiveSize {
-		return "", fmt.Errorf("%w: 主题压缩包超过 %d 字节限制", errThemeArchiveTooLarge, maxThemeArchiveSize)
-	}
-	if written == 0 {
-		return "", errors.New("主题压缩包为空")
-	}
-	if err := file.Close(); err != nil {
-		return "", err
-	}
-	remove = false
 	return name, nil
 }
 
@@ -152,56 +123,6 @@ func themeDeletionFallback(themes []models.Theme, target string) (bool, string) 
 	return found, fallback
 }
 
-// UploadTheme 上传主题
-func UploadTheme(c *gin.Context) {
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxThemeUploadSize)
-	var reader io.ReadCloser
-	if strings.HasPrefix(c.ContentType(), "multipart/form-data") {
-		fileHeader, err := c.FormFile("file")
-		if err != nil {
-			status := http.StatusBadRequest
-			var maxBytesError *http.MaxBytesError
-			if errors.As(err, &maxBytesError) {
-				status = http.StatusRequestEntityTooLarge
-			}
-			api.RespondError(c, status, "请选择有效大小的主题文件")
-			return
-		}
-		if fileHeader.Size > maxThemeArchiveSize {
-			api.RespondError(c, http.StatusRequestEntityTooLarge, "主题压缩包过大")
-			return
-		}
-		reader, err = fileHeader.Open()
-		if err != nil {
-			api.RespondError(c, http.StatusBadRequest, "读取主题文件失败: "+err.Error())
-			return
-		}
-	} else {
-		reader = c.Request.Body
-	}
-	defer reader.Close()
-
-	tempFile, err := temporaryThemeArchiveFromReader(reader, "uploaded-theme")
-	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, errThemeArchiveTooLarge) {
-			status = http.StatusRequestEntityTooLarge
-		}
-		api.RespondError(c, status, "保存文件失败: "+err.Error())
-		return
-	}
-	defer os.Remove(tempFile)
-
-	// 解压ZIP文件并验证
-	themeInfo, err := extractAndValidateTheme(tempFile)
-	if err != nil {
-		api.RespondError(c, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	api.RespondSuccessMessage(c, "主题上传成功", themeInfo)
-}
-
 // ListThemes 列出所有主题
 func ListThemes(c *gin.Context) {
 	themes, err := installedThemes()
@@ -248,37 +169,52 @@ func DeleteTheme(c *gin.Context) {
 	}
 
 	currentTheme, _ := config.GetAs[string](config.ThemeKey, public.DefaultTheme)
-	if currentTheme == req.Short {
-		if err := config.Set(config.ThemeKey, fallback); err != nil {
-			api.RespondError(c, http.StatusInternalServerError, "切换备用主题失败: "+err.Error())
-			return
-		}
-	}
-
-	themeDir := filepath.Join("./data/theme", req.Short)
-	tombstone, err := os.MkdirTemp("./data/theme", ".deleted-"+req.Short+"-")
-	if err != nil {
-		if currentTheme == req.Short {
-			_ = config.Set(config.ThemeKey, currentTheme)
-		}
-		api.RespondError(c, http.StatusInternalServerError, "准备删除主题失败: "+err.Error())
-		return
-	}
-	_ = os.Remove(tombstone)
-	if err := os.Rename(themeDir, tombstone); err != nil {
-		if currentTheme == req.Short {
-			_ = config.Set(config.ThemeKey, currentTheme)
-		}
+	if err := deleteInstalledTheme(dbcore.GetDBInstance(), req.Short, currentTheme, fallback); err != nil {
 		api.RespondError(c, http.StatusInternalServerError, "删除主题失败: "+err.Error())
 		return
 	}
-	if err := os.RemoveAll(tombstone); err != nil {
-		api.RespondError(c, http.StatusInternalServerError, "清理已删除主题失败: "+err.Error())
-		return
-	}
-	_ = dbcore.GetDBInstance().Where("short = ?", req.Short).Delete(&models.ThemeConfiguration{}).Error
 
 	api.RespondSuccessMessage(c, "主题删除成功", gin.H{"theme": fallback})
+}
+
+func deleteInstalledTheme(db *gorm.DB, short, currentTheme, fallback string) error {
+	themeDir := filepath.Join("./data/theme", short)
+	tombstone, err := os.MkdirTemp("./data/theme", ".deleted-"+short+"-")
+	if err != nil {
+		return fmt.Errorf("prepare theme tombstone: %w", err)
+	}
+	_ = os.Remove(tombstone)
+	if err := os.Rename(themeDir, tombstone); err != nil {
+		return fmt.Errorf("move theme to tombstone: %w", err)
+	}
+	dbErr := db.Transaction(func(tx *gorm.DB) error {
+		if currentTheme == short {
+			value, err := json.Marshal(fallback)
+			if err != nil {
+				return err
+			}
+			item := config.ConfigItem{Key: config.ThemeKey, Value: string(value)}
+			if err := tx.Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "key"}}, DoUpdates: clause.AssignmentColumns([]string{"value"}),
+			}).Create(&item).Error; err != nil {
+				return fmt.Errorf("switch to fallback theme: %w", err)
+			}
+		}
+		if err := tx.Where("short = ?", short).Delete(&models.ThemeConfiguration{}).Error; err != nil {
+			return fmt.Errorf("delete theme configuration: %w", err)
+		}
+		return nil
+	})
+	if dbErr != nil {
+		if restoreErr := os.Rename(tombstone, themeDir); restoreErr != nil {
+			return errors.Join(dbErr, fmt.Errorf("restore theme directory after database rollback: %w", restoreErr))
+		}
+		return dbErr
+	}
+	if err := os.RemoveAll(tombstone); err != nil {
+		logger.Errorf("theme", "Theme %s was deleted but its hidden tombstone could not be removed: %v", short, err)
+	}
+	return nil
 }
 
 // SetTheme 设置主题
@@ -359,7 +295,7 @@ func extractAndValidateTheme(zipPath string) (models.Theme, error) {
 	}
 
 	// 验证必填字段
-	if themeInfo.Name == "" || themeInfo.Short == "" {
+	if !models.IsLocalizedText(themeInfo.Name) || themeInfo.Short == "" {
 		return themeInfo, fmt.Errorf("主题配置缺少必填字段（name、short）")
 	}
 
@@ -450,6 +386,10 @@ func extractAndValidateTheme(zipPath string) (models.Theme, error) {
 	if hadPrevious {
 		_ = os.RemoveAll(backupDir)
 	}
+
+	go func(short, preview string) {
+		_ = public.EnsureThemePreviewCard(short, preview)
+	}(themeInfo.Short, themeInfo.Preview)
 
 	return themeInfo, nil
 }
@@ -904,7 +844,7 @@ func peekThemeFromZip(zipPath string) (models.Theme, error) {
 		return themeInfo, fmt.Errorf("主题配置格式错误: %v", err)
 	}
 
-	if themeInfo.Name == "" || themeInfo.Short == "" {
+	if !models.IsLocalizedText(themeInfo.Name) || themeInfo.Short == "" {
 		return themeInfo, fmt.Errorf("主题配置缺少必填字段（name、short）")
 	}
 

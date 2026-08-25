@@ -2,6 +2,7 @@ package public
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -192,6 +193,55 @@ func TestRenderPublicDocumentTitle(t *testing.T) {
 	}
 }
 
+func TestRenderApplicationIdentityUsesBackendNameAndFavicon(t *testing.T) {
+	htmlStr := `<html><head>
+<title>Theme title</title>
+<meta name="apple-mobile-web-app-title" content="Theme application" />
+<link rel="shortcut icon" href="relative-favicon.ico" />
+<link rel="icon" type="image/png" href="/theme-icon.png" />
+<link rel="apple-touch-icon" href="/theme-touch-icon.png" />
+</head><body></body></html>`
+
+	got := renderApplicationIdentity(htmlStr, `Nomi & Friends`)
+	for _, want := range []string{
+		`<title>Nomi &amp; Friends</title>`,
+		`<meta name="apple-mobile-web-app-title" content="Nomi &amp; Friends" />`,
+		`<link rel="icon" href="/favicon.ico" />`,
+		`<link rel="apple-touch-icon" href="/favicon.ico" />`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("renderApplicationIdentity() = %q, want fragment %q", got, want)
+		}
+	}
+	for _, stale := range []string{"Theme application", "/theme-icon.png", "/theme-touch-icon.png"} {
+		if strings.Contains(got, stale) {
+			t.Fatalf("renderApplicationIdentity() retained stale metadata %q: %q", stale, got)
+		}
+	}
+	if strings.Count(got, `<link rel="icon" href="/favicon.ico" />`) != 1 {
+		t.Fatalf("renderApplicationIdentity() did not normalize favicon declarations: %q", got)
+	}
+	if strings.Contains(got, "relative-favicon.ico") {
+		t.Fatalf("renderApplicationIdentity() retained a route-relative favicon: %q", got)
+	}
+}
+
+func TestRenderSystemApplicationIdentityLeavesRuntimeTitleOwnershipToReact(t *testing.T) {
+	got := renderSystemApplicationIdentity(
+		`<html><head><title>Komari Lite</title><link rel="shortcut icon" href="favicon.ico" /></head><body></body></html>`,
+		"My Komari",
+	)
+	if !strings.Contains(got, `<title>My Komari</title>`) {
+		t.Fatalf("system document did not receive its initial title: %q", got)
+	}
+	if strings.Contains(got, documentTitleSyncMarker) || strings.Contains(got, "MutationObserver") {
+		t.Fatalf("system document retained the public title synchronizer: %q", got)
+	}
+	if !strings.Contains(got, `<link rel="icon" href="/favicon.ico" />`) || strings.Contains(got, `href="favicon.ico"`) {
+		t.Fatalf("system document did not receive a route-safe favicon: %q", got)
+	}
+}
+
 func TestCustomHTMLIsLimitedToPublicPages(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
@@ -200,6 +250,7 @@ func TestCustomHTMLIsLimitedToPublicPages(t *testing.T) {
 	}
 	config.SetDb(db)
 	if err := config.SetMany(map[string]any{
+		config.SitenameKey:   "My Komari",
 		config.CustomHeadKey: `<style data-custom-head>body{--custom-marker:1}</style>`,
 		config.CustomBodyKey: `<div data-custom-body>custom body marker</div>`,
 	}); err != nil {
@@ -237,8 +288,97 @@ func TestCustomHTMLIsLimitedToPublicPages(t *testing.T) {
 		if hasCustomHead != tt.wantCustom || hasCustomBody != tt.wantCustom {
 			t.Fatalf("GET %s custom HTML = (head: %t, body: %t), want both %t", tt.path, hasCustomHead, hasCustomBody, tt.wantCustom)
 		}
+		expectedTitle := "My Komari"
+		if isAdminApplicationPath(tt.path) {
+			expectedTitle = adminApplicationTitle
+		}
+		for _, want := range []string{
+			`<title>` + expectedTitle + `</title>`,
+			`<meta name="apple-mobile-web-app-title" content="` + expectedTitle + `" />`,
+			`<link rel="icon" href="/favicon.ico" />`,
+			`<link rel="apple-touch-icon" href="/favicon.ico" />`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("GET %s body does not contain %q", tt.path, want)
+			}
+		}
+		if !isPrivateApplicationPath(tt.path) {
+			if !strings.Contains(body, documentTitleSyncMarker) {
+				t.Fatalf("GET %s public document has no title synchronizer", tt.path)
+			}
+		} else if strings.Contains(body, documentTitleSyncMarker) {
+			t.Fatalf("GET %s private system document contains the public title synchronizer", tt.path)
+		}
 		if got := recorder.Header().Get("Cache-Control"); got != "no-store, no-cache, must-revalidate" {
 			t.Fatalf("GET %s Cache-Control = %q", tt.path, got)
+		}
+	}
+}
+
+func TestAdminApplicationPath(t *testing.T) {
+	tests := map[string]bool{
+		"/admin":         true,
+		"/admin/servers": true,
+		"/administrator": false,
+		"/terminal":      false,
+		"/install":       false,
+		"/manage":        false,
+	}
+	for requestPath, want := range tests {
+		if got := isAdminApplicationPath(requestPath); got != want {
+			t.Fatalf("isAdminApplicationPath(%q) = %t, want %t", requestPath, got, want)
+		}
+	}
+}
+
+func TestStaticServesOneDynamicManifestForPublicAndSystemUI(t *testing.T) {
+	t.Chdir(t.TempDir())
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.SetDb(db)
+	if err := config.SetMany(map[string]any{
+		config.SitenameKey:    "My Komari",
+		config.DescriptionKey: "My monitor",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	router := gin.New()
+	Static(router.Group("/"), router.NoRoute)
+
+	for _, requestPath := range []string{"/manifest.json", "/system-assets/manifest.json"} {
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, requestPath, nil))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("GET %s status = %d, want %d", requestPath, recorder.Code, http.StatusOK)
+		}
+		if got := recorder.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+			t.Fatalf("GET %s Content-Type = %q", requestPath, got)
+		}
+		if got := recorder.Header().Get("Cache-Control"); got != "no-store, no-cache, must-revalidate" {
+			t.Fatalf("GET %s Cache-Control = %q", requestPath, got)
+		}
+
+		var manifest webAppManifest
+		if err := json.Unmarshal(recorder.Body.Bytes(), &manifest); err != nil {
+			t.Fatalf("decode GET %s: %v", requestPath, err)
+		}
+		if manifest.ID != "/" || manifest.Name != "My Komari" || manifest.ShortName != "My Komari" {
+			t.Fatalf("GET %s identity = (%q, %q, %q)", requestPath, manifest.ID, manifest.Name, manifest.ShortName)
+		}
+		if manifest.Description != "My monitor" || manifest.StartURL != "/" || manifest.Scope != "/" {
+			t.Fatalf("GET %s routing metadata = %#v", requestPath, manifest)
+		}
+		if len(manifest.Icons) != 1 || manifest.Icons[0] != (webAppManifestIcon{
+			Src:     "/favicon.ico",
+			Sizes:   "any",
+			Type:    "image/x-icon",
+			Purpose: "any",
+		}) {
+			t.Fatalf("GET %s icons = %#v", requestPath, manifest.Icons)
 		}
 	}
 }

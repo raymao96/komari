@@ -49,14 +49,40 @@ const themeBundleMigrationKey = "theme_bundle_migration_v1"
 
 const currentThemeBundleMigration = 3
 
+const adminApplicationTitle = "Komari Lite Monitor"
+
 const themeChangeReloadScript = `<script>(()=>{window.addEventListener("storage",(event)=>{if(event.key==="komari-active-theme-changed"){window.location.reload();}});})();</script>`
 
 const documentTitleSyncMarker = "data-komari-title-sync"
 
+type webAppManifest struct {
+	ID              string               `json:"id"`
+	Name            string               `json:"name"`
+	ShortName       string               `json:"short_name"`
+	Description     string               `json:"description"`
+	StartURL        string               `json:"start_url"`
+	Scope           string               `json:"scope"`
+	Display         string               `json:"display"`
+	BackgroundColor string               `json:"background_color"`
+	ThemeColor      string               `json:"theme_color"`
+	Orientation     string               `json:"orientation"`
+	Icons           []webAppManifestIcon `json:"icons"`
+}
+
+type webAppManifestIcon struct {
+	Src     string `json:"src"`
+	Sizes   string `json:"sizes"`
+	Type    string `json:"type"`
+	Purpose string `json:"purpose"`
+}
+
 var (
-	documentTitlePattern = regexp.MustCompile(`(?is)<title(?:\s[^>]*)?>.*?</title\s*>`)
-	headClosePattern     = regexp.MustCompile(`(?i)</head\s*>`)
-	bodyClosePattern     = regexp.MustCompile(`(?i)</body\s*>`)
+	documentTitlePattern         = regexp.MustCompile(`(?is)<title(?:\s[^>]*)?>.*?</title\s*>`)
+	appleApplicationTitlePattern = regexp.MustCompile(`(?is)<meta\s+[^>]*name\s*=\s*["']apple-mobile-web-app-title["'][^>]*>`)
+	applicationIconPattern       = regexp.MustCompile(`(?is)<link\s+[^>]*rel\s*=\s*["'](?:shortcut\s+)?icon["'][^>]*>`)
+	appleTouchIconPattern        = regexp.MustCompile(`(?is)<link\s+[^>]*rel\s*=\s*["']apple-touch-icon["'][^>]*>`)
+	headClosePattern             = regexp.MustCompile(`(?i)</head\s*>`)
+	bodyClosePattern             = regexp.MustCompile(`(?i)</body\s*>`)
 )
 
 func injectThemeChangeReload(html string) string {
@@ -81,7 +107,7 @@ func injectCustomHTML(htmlStr, customHead, customBody string) string {
 	return customHead + htmlStr
 }
 
-func renderPublicDocumentTitle(htmlStr, title string) string {
+func renderDocumentTitle(htmlStr, title string) string {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		title = "Komari Lite"
@@ -96,16 +122,93 @@ func renderPublicDocumentTitle(htmlStr, title string) string {
 		htmlStr = titleTag + htmlStr
 	}
 
+	return htmlStr
+}
+
+func renderPublicDocumentTitle(htmlStr, title string) string {
+	htmlStr = renderDocumentTitle(htmlStr, title)
 	if strings.Contains(htmlStr, documentTitleSyncMarker) {
 		return htmlStr
 	}
 
+	title = strings.TrimSpace(title)
+	if title == "" {
+		title = "Komari Lite"
+	}
 	encodedTitle, _ := json.Marshal(title)
 	script := `<script ` + documentTitleSyncMarker + `>(()=>{const expectedTitle=` + string(encodedTitle) + `;const syncTitle=()=>{if(document.title!==expectedTitle){document.title=expectedTitle;}};syncTitle();if(document.head){new MutationObserver(syncTitle).observe(document.head,{childList:true,subtree:true,characterData:true});}})();</script>`
 	if location := bodyClosePattern.FindStringIndex(htmlStr); location != nil {
 		return htmlStr[:location[0]] + script + htmlStr[location[0]:]
 	}
 	return htmlStr + script
+}
+
+func renderApplicationIdentityWithTitle(htmlStr, title string, synchronizeTitle bool) string {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		title = "Komari Lite"
+	}
+
+	if synchronizeTitle {
+		htmlStr = renderPublicDocumentTitle(htmlStr, title)
+	} else {
+		htmlStr = renderDocumentTitle(htmlStr, title)
+	}
+	appleTitle := `<meta name="apple-mobile-web-app-title" content="` + html.EscapeString(title) + `" />`
+	if appleApplicationTitlePattern.MatchString(htmlStr) {
+		htmlStr = appleApplicationTitlePattern.ReplaceAllString(htmlStr, appleTitle)
+	} else if location := headClosePattern.FindStringIndex(htmlStr); location != nil {
+		htmlStr = htmlStr[:location[0]] + appleTitle + htmlStr[location[0]:]
+	}
+
+	// Remove every theme-provided icon declaration before adding the canonical
+	// root paths. This also covers legacy `rel="shortcut icon"` declarations,
+	// which otherwise resolve below deep SPA routes such as /admin/settings.
+	htmlStr = applicationIconPattern.ReplaceAllString(htmlStr, "")
+	htmlStr = appleTouchIconPattern.ReplaceAllString(htmlStr, "")
+	icons := `<link rel="icon" href="/favicon.ico" /><link rel="apple-touch-icon" href="/favicon.ico" />`
+	if location := headClosePattern.FindStringIndex(htmlStr); location != nil {
+		htmlStr = htmlStr[:location[0]] + icons + htmlStr[location[0]:]
+	}
+	return htmlStr
+}
+
+func renderApplicationIdentity(htmlStr, title string) string {
+	return renderApplicationIdentityWithTitle(htmlStr, title, true)
+}
+
+func renderSystemApplicationIdentity(htmlStr, title string) string {
+	return renderApplicationIdentityWithTitle(htmlStr, title, false)
+}
+
+func renderWebAppManifest(siteName, description string) webAppManifest {
+	siteName = strings.TrimSpace(siteName)
+	if siteName == "" {
+		siteName = "Komari Lite"
+	}
+	description = strings.TrimSpace(description)
+	if description == "" {
+		description = "A simple server monitor tool."
+	}
+
+	return webAppManifest{
+		ID:              "/",
+		Name:            siteName,
+		ShortName:       siteName,
+		Description:     description,
+		StartURL:        "/",
+		Scope:           "/",
+		Display:         "standalone",
+		BackgroundColor: "#ffffff",
+		ThemeColor:      "#2563eb",
+		Orientation:     "portrait-primary",
+		Icons: []webAppManifestIcon{{
+			Src:     "/favicon.ico",
+			Sizes:   "any",
+			Type:    "image/x-icon",
+			Purpose: "any",
+		}},
+	}
 }
 
 func init() {
@@ -403,6 +506,15 @@ func Static(r *gin.RouterGroup, noRoute func(handlers ...gin.HandlerFunc)) {
 		return embeddedFileContent("rescueTheme", relativePath)
 	}
 
+	serveWebAppManifest := func(c *gin.Context) {
+		cfg := getConfig()
+		setNoStoreHeaders(c)
+		c.JSON(http.StatusOK, renderWebAppManifest(
+			cfg[config.SitenameKey].(string),
+			cfg[config.DescriptionKey].(string),
+		))
+	}
+
 	// 核心逻辑：渲染 Index.html
 	serveIndex := func(c *gin.Context) {
 		reqPath := c.Request.URL.Path
@@ -429,6 +541,18 @@ func Static(r *gin.RouterGroup, noRoute func(handlers ...gin.HandlerFunc)) {
 		if language, err := c.Cookie(LanguageCookieName); err == nil {
 			htmlStr = replaceHTMLLanguage(htmlStr, language)
 		}
+		if privateApplication {
+			// React owns route-specific titles after the system UI starts. Keeping
+			// the public-theme title observer out of private applications prevents
+			// it from fighting the admin title on every DOM mutation.
+			title := cfg[config.SitenameKey].(string)
+			if isAdminApplicationPath(reqPath) {
+				title = adminApplicationTitle
+			}
+			htmlStr = renderSystemApplicationIdentity(htmlStr, title)
+		} else {
+			htmlStr = renderApplicationIdentity(htmlStr, cfg[config.SitenameKey].(string))
+		}
 
 		// Custom Head/Body content belongs to the public site only. Keeping the
 		// private applications on the built-in document prevents public CSS and
@@ -444,13 +568,10 @@ func Static(r *gin.RouterGroup, noRoute func(handlers ...gin.HandlerFunc)) {
 			cfg[config.CustomBodyKey].(string),
 		)
 
-		rendered := renderPublicDocumentTitle(
-			strings.ReplaceAll(
-				htmlStr,
-				"A simple server monitor tool.",
-				cfg[config.DescriptionKey].(string),
-			),
-			cfg[config.SitenameKey].(string),
+		rendered := strings.ReplaceAll(
+			htmlStr,
+			"A simple server monitor tool.",
+			cfg[config.DescriptionKey].(string),
 		)
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(injectThemeChangeReload(rendered)))
 	}
@@ -492,8 +613,14 @@ func Static(r *gin.RouterGroup, noRoute func(handlers ...gin.HandlerFunc)) {
 		c.Status(http.StatusNotFound)
 	})
 
+	r.GET("/manifest.json", serveWebAppManifest)
+
 	// System application assets are immutable and independent from public themes.
 	r.GET("/system-assets/*path", func(c *gin.Context) {
+		if c.Param("path") == "/manifest.json" {
+			serveWebAppManifest(c)
+			return
+		}
 		filePath := path.Join(DistDir, c.Param("path"))
 		content, mimeType, exists := embeddedFileContent("systemUI", filePath)
 		if !exists {
@@ -510,13 +637,7 @@ func Static(r *gin.RouterGroup, noRoute func(handlers ...gin.HandlerFunc)) {
 		themeID := c.Param("id")
 		// c.Param("path") 包含了开头的 /，getFileContent 会处理
 		filePath := c.Param("path")
-
-		content, mimeType, exists := localThemeFileContent(themeID, filePath)
-		if exists {
-			c.Data(http.StatusOK, mimeType, content)
-			return
-		}
-		c.Status(http.StatusNotFound)
+		serveThemeFile(c, themeID, filePath)
 	})
 
 	// 3. SPA 路由 (noRoute)
@@ -610,10 +731,14 @@ func isPrivateApplicationPath(requestPath string) bool {
 	return false
 }
 
+func isAdminApplicationPath(requestPath string) bool {
+	return requestPath == "/admin" || strings.HasPrefix(requestPath, "/admin/")
+}
+
 func setStaticCacheHeaders(c *gin.Context, requestPath string) {
 	name := strings.ToLower(path.Base(requestPath))
 	switch name {
-	case "index.html", "sw.js", "service-worker.js", "registersw.js", "manifest.webmanifest":
+	case "index.html", "sw.js", "service-worker.js", "registersw.js", "manifest.json", "manifest.webmanifest":
 		setNoStoreHeaders(c)
 		return
 	}

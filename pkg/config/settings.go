@@ -14,6 +14,7 @@ type Settings struct {
 	Description            string `json:"description" default:"A simple server monitor tool."` // 站点描述
 	AdminDefaultPageSize   int    `json:"admin_default_page_size" default:"10"`                // 后台列表默认每页条数
 	ReduceMotion           bool   `json:"reduce_motion" default:"false"`                       // 减少后台界面动态效果
+	AutoOrderNewClients    bool   `json:"auto_order_new_clients_by_region" default:"false"`    // 新服务器首次识别国家后自动排到同组同国家节点后面，默认关闭
 	CorsOriginCheckEnabled bool   `json:"cors_origin_check_enabled" default:"true"`            // 是否启用 API CORS 跨域请求校验，默认 true
 	CorsAllowedOrigins     string `json:"cors_allowed_origins" default:""`                     // API 跨域允许列表
 	WsOriginCheckEnabled   bool   `json:"ws_origin_check_enabled" default:"true"`              // 是否校验 WebSocket Origin
@@ -61,6 +62,7 @@ const (
 	DescriptionKey            = "description"
 	AdminDefaultPageSizeKey   = "admin_default_page_size"
 	ReduceMotionKey           = "reduce_motion"
+	AutoOrderNewClientsKey    = "auto_order_new_clients_by_region"
 	CorsOriginCheckEnabledKey = "cors_origin_check_enabled"
 	CorsAllowedOriginsKey     = "cors_allowed_origins"
 	WsOriginCheckEnabledKey   = "ws_origin_check_enabled"
@@ -91,16 +93,19 @@ const (
 	CustomHeadKey            = "custom_head"
 	CustomBodyKey            = "custom_body"
 
-	NotificationEnabledKey        = "notification_enabled"
-	NotificationMethodKey         = "notification_method"
-	NotificationTemplateKey       = "notification_template"
-	ExpireNotificationEnabledKey  = "expire_notification_enabled"
-	ExpireNotificationLeadDaysKey = "expire_notification_lead_days"
-	LoginNotificationKey          = "login_notification"
-	TrafficLimitPercentageKey     = "traffic_limit_percentage"
-	TrafficReportTimeKey          = "traffic_report_time"
-	UpdatedAtKey                  = "updated_at"
-	XtermjsSettingsKey            = "xtermjs_settings"
-	DashboardSettingsKey          = "dashboard_settings"
-	ThemeMarketSourcesKey         = "theme_market_sources"
+	NotificationEnabledKey         = "notification_enabled"
+	NotificationMethodKey          = "notification_method"
+	NotificationTemplateKey        = "notification_template"
+	OfflineNotificationDefaultKey  = "offline_notification_default"
+	PingLossNotificationDefaultKey = "ping_loss_notification_default"
+	TrafficReportDefaultKey        = "traffic_report_default"
+	ExpireNotificationEnabledKey   = "expire_notification_enabled"
+	ExpireNotificationLeadDaysKey  = "expire_notification_lead_days"
+	LoginNotificationKey           = "login_notification"
+	TrafficLimitPercentageKey      = "traffic_limit_percentage"
+	TrafficReportTimeKey           = "traffic_report_time"
+	UpdatedAtKey                   = "updated_at"
+	XtermjsSettingsKey             = "xtermjs_settings"
+	DashboardSettingsKey           = "dashboard_settings"
+	ThemeMarketSourcesKey          = "theme_market_sources"
 )

@@ -28,6 +28,7 @@ func TestStaticCacheHeaders(t *testing.T) {
 	}{
 		{"/sw.js", "no-store, no-cache, must-revalidate"},
 		{"/service-worker.js", "no-store, no-cache, must-revalidate"},
+		{"/manifest.json", "no-store, no-cache, must-revalidate"},
 		{"/manifest.webmanifest", "no-store, no-cache, must-revalidate"},
 		{"/assets/entry-main-abcdef.js", "public, max-age=31536000, immutable"},
 		{"/assets/logo.png", ""},
@@ -39,5 +40,15 @@ func TestStaticCacheHeaders(t *testing.T) {
 		if got := recorder.Header().Get("Cache-Control"); got != test.want {
 			t.Fatalf("Cache-Control for %q=%q, want %q", test.path, got, test.want)
 		}
+	}
+}
+
+func TestThemeStaticCacheHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	setThemeStaticCacheHeaders(context, "/themes/glass/preview.png")
+	if got := recorder.Header().Get("Cache-Control"); got != "public, max-age=86400" {
+		t.Fatalf("theme image Cache-Control=%q", got)
 	}
 }

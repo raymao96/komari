@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	releaseBaseURL = "https://github.com/nuomiiiii/komari/releases/download"
+	releaseBaseURL = "https://github.com/raymao96/komari/releases/download"
 	manifestName   = "komari-update.json"
 	maxManifest    = 2 << 20
 	maxBinary      = 256 << 20
@@ -75,7 +75,7 @@ func (manifest *Manifest) validate(version, versionHash string) (*ManifestAsset,
 	if manifest.Schema != 1 {
 		return nil, fmt.Errorf("unsupported update manifest schema %d", manifest.Schema)
 	}
-	if manifest.Version != version || !strings.EqualFold(manifest.VersionHash, versionHash) {
+	if manifest.Version != version || manifest.VersionHash != versionHash {
 		return nil, errors.New("release metadata does not match the requested update")
 	}
 	name := fmt.Sprintf("komari-%s-%s", runtime.GOOS, runtime.GOARCH)

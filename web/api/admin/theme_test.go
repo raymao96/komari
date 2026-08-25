@@ -3,15 +3,17 @@ package admin
 import (
 	"archive/zip"
 	"bytes"
-	"mime/multipart"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	"github.com/komari-monitor/komari/database/models"
+	"github.com/komari-monitor/komari/pkg/config"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 // TestIsValidThemeShort_PathTraversal 防止 DeleteTheme/UpdateTheme/SetTheme
@@ -77,40 +79,13 @@ func themeArchive(t *testing.T, files map[string]string) []byte {
 	return buffer.Bytes()
 }
 
-func TestUploadThemeAcceptsMultipartForm(t *testing.T) {
-	t.Chdir(t.TempDir())
-	archive := themeArchive(t, map[string]string{
-		"komari-theme.json": `{"name":"Uploaded","short":"uploaded","configuration":{"type":"managed","data":[]}}`,
-		"dist/index.html":   `<html><body>uploaded theme</body></html>`,
+func closeThemeTestDB(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, sqlDB.Close())
 	})
-
-	var body bytes.Buffer
-	form := multipart.NewWriter(&body)
-	file, err := form.CreateFormFile("file", "uploaded.zip")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := file.Write(archive); err != nil {
-		t.Fatal(err)
-	}
-	if err := form.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	router.PUT("/upload", UploadTheme)
-	request := httptest.NewRequest(http.MethodPut, "/upload", &body)
-	request.Header.Set("Content-Type", form.FormDataContentType())
-	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("upload status=%d body=%s", recorder.Code, recorder.Body.String())
-	}
-	if _, err := os.Stat(filepath.Join("data", "theme", "uploaded", "dist", "index.html")); err != nil {
-		t.Fatalf("uploaded theme was not installed: %v", err)
-	}
 }
 
 func TestFailedThemeUpdatePreservesExistingTheme(t *testing.T) {
@@ -163,4 +138,53 @@ func TestThemeDeletionFallbackRequiresAnotherTheme(t *testing.T) {
 	if found, _ := themeDeletionFallback(themes, "missing"); found {
 		t.Fatal("missing theme was reported as installed")
 	}
+}
+
+func TestDeleteInstalledThemeRollsBackDirectoryAndConfigTogether(t *testing.T) {
+	t.Chdir(t.TempDir())
+	require.NoError(t, os.MkdirAll(filepath.Join("data", "theme", "target", "dist"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join("data", "theme", "target", "dist", "index.html"), []byte("target"), 0o644))
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "theme-delete.db")), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	closeThemeTestDB(t, db)
+	require.NoError(t, db.AutoMigrate(&config.ConfigItem{}, &models.ThemeConfiguration{}))
+	require.NoError(t, db.Create(&config.ConfigItem{Key: config.ThemeKey, Value: `"target"`}).Error)
+	require.NoError(t, db.Create(&models.ThemeConfiguration{Short: "target", Data: `{}`}).Error)
+	require.NoError(t, db.Exec(`CREATE TRIGGER reject_theme_configuration_delete BEFORE DELETE ON theme_configurations
+		BEGIN SELECT RAISE(FAIL, 'delete rejected'); END`).Error)
+
+	err = deleteInstalledTheme(db, "target", "target", "fallback")
+	require.Error(t, err)
+	_, statErr := os.Stat(filepath.Join("data", "theme", "target", "dist", "index.html"))
+	require.NoError(t, statErr)
+	var item config.ConfigItem
+	require.NoError(t, db.First(&item, "key = ?", config.ThemeKey).Error)
+	assert.Equal(t, `"target"`, item.Value)
+	var configurationCount int64
+	require.NoError(t, db.Model(&models.ThemeConfiguration{}).Where("short = ?", "target").Count(&configurationCount).Error)
+	assert.Equal(t, int64(1), configurationCount)
+	deleted, globErr := filepath.Glob(filepath.Join("data", "theme", ".deleted-target-*"))
+	require.NoError(t, globErr)
+	assert.Empty(t, deleted)
+}
+
+func TestDeleteInstalledThemeCommitsFallbackAndConfigurationRemoval(t *testing.T) {
+	t.Chdir(t.TempDir())
+	require.NoError(t, os.MkdirAll(filepath.Join("data", "theme", "target", "dist"), 0o755))
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "theme-delete-success.db")), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	require.NoError(t, err)
+	closeThemeTestDB(t, db)
+	require.NoError(t, db.AutoMigrate(&config.ConfigItem{}, &models.ThemeConfiguration{}))
+	require.NoError(t, db.Create(&config.ConfigItem{Key: config.ThemeKey, Value: `"target"`}).Error)
+	require.NoError(t, db.Create(&models.ThemeConfiguration{Short: "target", Data: `{}`}).Error)
+
+	require.NoError(t, deleteInstalledTheme(db, "target", "target", "fallback"))
+	_, statErr := os.Stat(filepath.Join("data", "theme", "target"))
+	assert.True(t, os.IsNotExist(statErr), "theme directory still exists: %v", statErr)
+	var item config.ConfigItem
+	require.NoError(t, db.First(&item, "key = ?", config.ThemeKey).Error)
+	assert.Equal(t, `"fallback"`, item.Value)
+	var configurationCount int64
+	require.NoError(t, db.Model(&models.ThemeConfiguration{}).Where("short = ?", "target").Count(&configurationCount).Error)
+	assert.Zero(t, configurationCount)
 }
