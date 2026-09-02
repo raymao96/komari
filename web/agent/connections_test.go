@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	v1 "github.com/komari-monitor/komari/protocol/v1"
-	v2 "github.com/komari-monitor/komari/protocol/v2"
-	"github.com/komari-monitor/komari/web/connection"
+	v1 "github.com/nuomiiiii/lite/protocol/v1"
+	v2 "github.com/nuomiiiii/lite/protocol/v2"
+	"github.com/nuomiiiii/lite/web/connection"
 )
 
 func TestRecordReportKeepsLatestAndShortRecentWindow(t *testing.T) {
@@ -98,5 +98,31 @@ func TestDeleteConnectedClientsClearsAllRuntimeState(t *testing.T) {
 	}
 	if events := TakeV2Events("node-a", nil, 16); len(events) != 0 {
 		t.Fatalf("deleted client still has queued events: %#v", events)
+	}
+}
+
+func TestIsPresentIncludesHTTPPresence(t *testing.T) {
+	mu.Lock()
+	previousConnected := connectedClients
+	previousPresence := presenceOnly
+	connectedClients = make(map[string]*connection.SafeConn)
+	presenceOnly = make(map[string]struct {
+		id     int64
+		expire time.Time
+	})
+	mu.Unlock()
+	t.Cleanup(func() {
+		mu.Lock()
+		connectedClients = previousConnected
+		presenceOnly = previousPresence
+		mu.Unlock()
+	})
+
+	if IsPresent("node-a") {
+		t.Fatal("offline node should not be present")
+	}
+	KeepAlivePresence("node-a", 7, time.Minute)
+	if !IsPresent("node-a") {
+		t.Fatal("HTTP presence should count as online for auto-renewal")
 	}
 }

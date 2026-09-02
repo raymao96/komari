@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/komari-monitor/komari/database/dbcore"
-	"github.com/komari-monitor/komari/database/models"
-	messageevent "github.com/komari-monitor/komari/database/models/messageEvent"
-	v2 "github.com/komari-monitor/komari/protocol/v2"
-	"github.com/komari-monitor/komari/utils"
-	"github.com/komari-monitor/komari/utils/messageSender"
+	"github.com/nuomiiiii/lite/database/dbcore"
+	"github.com/nuomiiiii/lite/database/models"
+	messageevent "github.com/nuomiiiii/lite/database/models/messageEvent"
+	v2 "github.com/nuomiiiii/lite/protocol/v2"
+	"github.com/nuomiiiii/lite/utils"
+	"github.com/nuomiiiii/lite/utils/messageSender"
 	"gorm.io/gorm"
 )
 
@@ -32,60 +32,73 @@ type ReturnRouteOverview struct {
 }
 
 type ReturnRouteSummary struct {
-	Tasks        int64 `json:"tasks"`
-	Active       int64 `json:"active"`
-	Healthy      int64 `json:"healthy"`
-	Switched     int64 `json:"switched"`
-	Abnormal     int64 `json:"abnormal"`
-	RecentEvents int64 `json:"recent_events"`
+	Tasks            int64 `json:"tasks"`
+	Active           int64 `json:"active"`
+	Healthy          int64 `json:"healthy"`
+	Switched         int64 `json:"switched"`
+	Abnormal         int64 `json:"abnormal"`
+	SuspectedBlocked int64 `json:"suspected_blocked"`
+	RecentEvents     int64 `json:"recent_events"`
 }
 
 type ReturnRouteTaskQuery struct {
-	Page     int    `json:"page"`
-	PageSize int    `json:"page_size"`
-	TaskID   uint   `json:"task_id"`
-	Keyword  string `json:"keyword"`
-	Carrier  string `json:"carrier"`
-	State    string `json:"state"`
+	Page     int      `json:"page"`
+	PageSize int      `json:"page_size"`
+	TaskID   uint     `json:"task_id"`
+	Keyword  string   `json:"keyword"`
+	Carrier  string   `json:"carrier"`
+	Carriers []string `json:"carriers"`
+	State    string   `json:"state"`
+	States   []string `json:"states"`
 }
 
 type ReturnRouteTaskPage struct {
-	Tasks          []models.ReturnRouteTask   `json:"tasks"`
-	Statuses       []models.ReturnRouteStatus `json:"statuses"`
-	ProbingTaskIDs []uint                     `json:"probing_task_ids"`
-	Total          int64                      `json:"total"`
-	Page           int                        `json:"page"`
-	PageSize       int                        `json:"page_size"`
+	Tasks          []models.ReturnRouteTask      `json:"tasks"`
+	Statuses       []models.ReturnRouteStatus    `json:"statuses"`
+	Reachability   []ReturnRouteReachabilityView `json:"reachability"`
+	ProbingTaskIDs []uint                        `json:"probing_task_ids"`
+	Total          int64                         `json:"total"`
+	Page           int                           `json:"page"`
+	PageSize       int                           `json:"page_size"`
 }
 
 type ReturnRouteTaskBatchEdit struct {
-	IDs             []uint `json:"ids"`
-	Carrier         string `json:"carrier"`
-	Region          string `json:"region"`
-	Target          string `json:"target"`
-	IPVersion       int    `json:"ip_version"`
-	ExpectedLine    string `json:"expected_line"`
-	Protocol        string `json:"protocol"`
-	Interval        int    `json:"interval"`
-	SwitchConfirm   int    `json:"switch_confirm"`
-	RecoveryConfirm int    `json:"recovery_confirm"`
-	Cooldown        int    `json:"cooldown"`
-	Notify          bool   `json:"notify"`
-	NotifyRecovery  bool   `json:"notify_recovery"`
-	Enabled         bool   `json:"enabled"`
+	IDs                                []uint `json:"ids"`
+	Carrier                            string `json:"carrier"`
+	Region                             string `json:"region"`
+	Target                             string `json:"target"`
+	IPVersion                          int    `json:"ip_version"`
+	ExpectedLine                       string `json:"expected_line"`
+	Protocol                           string `json:"protocol"`
+	Interval                           int    `json:"interval"`
+	SwitchConfirm                      int    `json:"switch_confirm"`
+	RecoveryConfirm                    int    `json:"recovery_confirm"`
+	Cooldown                           int    `json:"cooldown"`
+	Notify                             bool   `json:"notify"`
+	NotifyRecovery                     bool   `json:"notify_recovery"`
+	MainlandReachabilityEnabled        bool   `json:"mainland_reachability_enabled"`
+	MainlandReachabilityNotify         bool   `json:"mainland_reachability_notify"`
+	MainlandReachabilityRecoveryNotify bool   `json:"mainland_reachability_recovery_notify"`
+	MainlandReachabilityPingTaskID     *uint  `json:"mainland_reachability_ping_task_id"`
+	Enabled                            bool   `json:"enabled"`
 }
 
 type ReturnRouteEventQuery struct {
-	Page         int        `json:"page"`
-	PageSize     int        `json:"page_size"`
-	Keyword      string     `json:"keyword"`
-	Kind         string     `json:"kind"`
-	Carrier      string     `json:"carrier"`
-	Region       string     `json:"region"`
-	ExpectedLine string     `json:"expected_line"`
-	ActualLine   string     `json:"actual_line"`
-	Start        *time.Time `json:"start"`
-	End          *time.Time `json:"end"`
+	Page          int        `json:"page"`
+	PageSize      int        `json:"page_size"`
+	Keyword       string     `json:"keyword"`
+	Kind          string     `json:"kind"`
+	Kinds         []string   `json:"kinds"`
+	Carrier       string     `json:"carrier"`
+	Carriers      []string   `json:"carriers"`
+	Region        string     `json:"region"`
+	Regions       []string   `json:"regions"`
+	ExpectedLine  string     `json:"expected_line"`
+	ExpectedLines []string   `json:"expected_lines"`
+	ActualLine    string     `json:"actual_line"`
+	ActualLines   []string   `json:"actual_lines"`
+	Start         *time.Time `json:"start"`
+	End           *time.Time `json:"end"`
 }
 
 type ReturnRouteEventItem struct {
@@ -153,6 +166,29 @@ func normalizeReturnRouteTaskWithDB(db *gorm.DB, task *models.ReturnRouteTask) e
 	if count == 0 {
 		return fmt.Errorf("client not found")
 	}
+	return normalizeMainlandPingAssociation(db, task)
+}
+
+func normalizeMainlandPingAssociation(db *gorm.DB, task *models.ReturnRouteTask) error {
+	if task.MainlandReachabilityPingTaskID != nil && *task.MainlandReachabilityPingTaskID == 0 {
+		task.MainlandReachabilityPingTaskID = nil
+	}
+	if task.MainlandReachabilityPingTaskID == nil {
+		if task.MainlandReachabilityEnabled {
+			return fmt.Errorf("开启疑似被墙判定时需选择辅助延迟监测任务")
+		}
+		return nil
+	}
+	var ping models.PingTask
+	if err := db.Where("id = ?", *task.MainlandReachabilityPingTaskID).First(&ping).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return fmt.Errorf("辅助延迟监测任务不存在")
+		}
+		return err
+	}
+	if !ping.AppliesToClient(task.Client) {
+		return fmt.Errorf("辅助延迟监测任务未分配给当前服务器")
+	}
 	return nil
 }
 
@@ -175,6 +211,7 @@ func AddReturnRouteTask(task *models.ReturnRouteTask) (uint, bool, error) {
 	if err := dbcore.GetDBInstance().Create(task).Error; err != nil {
 		return 0, false, err
 	}
+	_ = evaluateMainlandReachability(dbcore.GetDBInstance(), task.Client, task.IPVersion, *task, time.Now().UTC())
 	if err := ReloadReturnRouteSchedule(); err != nil {
 		return task.Id, false, err
 	}
@@ -183,29 +220,53 @@ func AddReturnRouteTask(task *models.ReturnRouteTask) (uint, bool, error) {
 }
 
 func EditReturnRouteTask(task *models.ReturnRouteTask) error {
+	if err := editReturnRouteTask(dbcore.GetDBInstance(), task); err != nil {
+		return err
+	}
+	_ = ReloadReturnRouteSchedule()
+	return nil
+}
+
+func editReturnRouteTask(db *gorm.DB, task *models.ReturnRouteTask) error {
 	if task.Id == 0 {
 		return fmt.Errorf("task id is required")
 	}
-	if err := normalizeReturnRouteTask(task); err != nil {
+	if err := normalizeReturnRouteTaskWithDB(db, task); err != nil {
 		return err
 	}
-	updates := map[string]any{
-		"name": task.Name, "client": task.Client, "carrier": task.Carrier,
-		"region": task.Region, "target": task.Target, "ip_version": task.IPVersion,
-		"expected_line": task.ExpectedLine, "protocol": task.Protocol,
-		"interval": task.Interval, "switch_confirm": task.SwitchConfirm,
-		"recovery_confirm": task.RecoveryConfirm, "cooldown": task.Cooldown,
-		"notify": task.Notify, "notify_recovery": task.NotifyRecovery, "enabled": task.Enabled,
+	var previous models.ReturnRouteTask
+	if err := db.First(&previous, task.Id).Error; err != nil {
+		return err
 	}
-	result := dbcore.GetDBInstance().Model(&models.ReturnRouteTask{}).Where("id = ?", task.Id).Updates(updates)
+	result := db.Model(&models.ReturnRouteTask{}).Where("id = ?", task.Id).Updates(returnRouteTaskColumnUpdates(*task))
 	if result.Error != nil {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
 		return gorm.ErrRecordNotFound
 	}
-	_ = ReloadReturnRouteSchedule()
+	now := time.Now().UTC()
+	_ = recomputeMainlandReachabilityKeys(db, mainlandKeysFromTasks([]models.ReturnRouteTask{previous, *task}), now)
 	return nil
+}
+
+func returnRouteTaskColumnUpdates(task models.ReturnRouteTask) map[string]any {
+	var pingID any
+	if task.MainlandReachabilityPingTaskID != nil {
+		pingID = *task.MainlandReachabilityPingTaskID
+	}
+	return map[string]any{
+		"name": task.Name, "client": task.Client, "carrier": task.Carrier,
+		"region": task.Region, "target": task.Target, "ip_version": task.IPVersion,
+		"expected_line": task.ExpectedLine, "protocol": task.Protocol,
+		"interval": task.Interval, "switch_confirm": task.SwitchConfirm,
+		"recovery_confirm": task.RecoveryConfirm, "cooldown": task.Cooldown,
+		"notify": task.Notify, "notify_recovery": task.NotifyRecovery, "enabled": task.Enabled,
+		"mainland_reachability_enabled":         task.MainlandReachabilityEnabled,
+		"mainland_reachability_notify":          task.MainlandReachabilityNotify,
+		"mainland_reachability_recovery_notify": task.MainlandReachabilityRecoveryNotify,
+		"mainland_reachability_ping_task_id":    pingID,
+	}
 }
 
 func EditReturnRouteTasksBatch(params ReturnRouteTaskBatchEdit) error {
@@ -239,6 +300,10 @@ func editReturnRouteTasksBatch(db *gorm.DB, params ReturnRouteTaskBatchEdit) err
 			SwitchConfirm: params.SwitchConfirm, RecoveryConfirm: params.RecoveryConfirm,
 			Cooldown: params.Cooldown, Notify: params.Notify,
 			NotifyRecovery: params.NotifyRecovery, Enabled: params.Enabled,
+			MainlandReachabilityEnabled:        params.MainlandReachabilityEnabled,
+			MainlandReachabilityNotify:         params.MainlandReachabilityNotify,
+			MainlandReachabilityRecoveryNotify: params.MainlandReachabilityRecoveryNotify,
+			MainlandReachabilityPingTaskID:     params.MainlandReachabilityPingTaskID,
 		}
 		if err := normalizeReturnRouteTaskWithDB(db, &candidate); err != nil {
 			return err
@@ -250,6 +315,10 @@ func editReturnRouteTasksBatch(db *gorm.DB, params ReturnRouteTaskBatchEdit) err
 		params.Protocol = candidate.Protocol
 	}
 
+	var pingID any
+	if params.MainlandReachabilityPingTaskID != nil {
+		pingID = *params.MainlandReachabilityPingTaskID
+	}
 	updates := map[string]any{
 		"carrier": params.Carrier, "region": params.Region, "target": params.Target,
 		"ip_version": params.IPVersion, "expected_line": params.ExpectedLine,
@@ -257,8 +326,21 @@ func editReturnRouteTasksBatch(db *gorm.DB, params ReturnRouteTaskBatchEdit) err
 		"switch_confirm": params.SwitchConfirm, "recovery_confirm": params.RecoveryConfirm,
 		"cooldown": params.Cooldown, "notify": params.Notify,
 		"notify_recovery": params.NotifyRecovery, "enabled": params.Enabled,
+		"mainland_reachability_enabled":         params.MainlandReachabilityEnabled,
+		"mainland_reachability_notify":          params.MainlandReachabilityNotify,
+		"mainland_reachability_recovery_notify": params.MainlandReachabilityRecoveryNotify,
+		"mainland_reachability_ping_task_id":    pingID,
 	}
-	return db.Model(&models.ReturnRouteTask{}).Where("id IN ?", ids).Updates(updates).Error
+	if err := db.Model(&models.ReturnRouteTask{}).Where("id IN ?", ids).Updates(updates).Error; err != nil {
+		return err
+	}
+	keys := mainlandKeysFromTasks(existing)
+	if params.IPVersion == 4 || params.IPVersion == 6 {
+		for _, task := range existing {
+			keys = append(keys, [2]any{task.Client, params.IPVersion})
+		}
+	}
+	return recomputeMainlandReachabilityKeys(db, keys, time.Now().UTC())
 }
 
 func uniqueReturnRouteTaskIDs(ids []uint) []uint {
@@ -281,11 +363,20 @@ func DeleteReturnRouteTasks(ids []uint) error {
 	if len(ids) == 0 {
 		return fmt.Errorf("task id is required")
 	}
-	err := dbcore.GetDBInstance().Transaction(func(tx *gorm.DB) error {
+	db := dbcore.GetDBInstance()
+	var existing []models.ReturnRouteTask
+	if err := db.Where("id IN ?", ids).Find(&existing).Error; err != nil {
+		return err
+	}
+	keys := mainlandKeysFromTasks(existing)
+	err := db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("task_id IN ?", ids).Delete(&models.ReturnRouteEvent{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("task_id IN ?", ids).Delete(&models.ReturnRouteStatus{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("task_id IN ?", ids).Delete(&models.ReturnRouteProbeSample{}).Error; err != nil {
 			return err
 		}
 		result := tx.Where("id IN ?", ids).Delete(&models.ReturnRouteTask{})
@@ -298,6 +389,7 @@ func DeleteReturnRouteTasks(ids []uint) error {
 		return nil
 	})
 	if err == nil {
+		_ = recomputeMainlandReachabilityKeys(db, keys, time.Now().UTC())
 		_ = ReloadReturnRouteSchedule()
 	}
 	return err
@@ -331,7 +423,15 @@ func getReturnRouteSummary(db *gorm.DB, now time.Time) (ReturnRouteSummary, erro
 		return result, err
 	}
 	activeTasks := db.Model(&models.ReturnRouteTask{}).Select("id").Where("enabled = ?", true)
-	if err := db.Model(&models.ReturnRouteStatus{}).Where("task_id IN (?) AND state = ? AND (last_error IS NULL OR last_error = ?)", activeTasks, "healthy", "").Count(&result.Healthy).Error; err != nil {
+	healthyQuery := db.Model(&models.ReturnRouteStatus{}).Where("task_id IN (?) AND state = ? AND (last_error IS NULL OR last_error = ?)", activeTasks, "healthy", "")
+	blockedIDs, err := blockedMainlandTaskIDs(db)
+	if err != nil {
+		return result, err
+	}
+	if len(blockedIDs) > 0 {
+		healthyQuery = healthyQuery.Where("task_id NOT IN ?", blockedIDs)
+	}
+	if err := healthyQuery.Count(&result.Healthy).Error; err != nil {
 		return result, err
 	}
 	activeTasks = db.Model(&models.ReturnRouteTask{}).Select("id").Where("enabled = ?", true)
@@ -340,6 +440,11 @@ func getReturnRouteSummary(db *gorm.DB, now time.Time) (ReturnRouteSummary, erro
 	}
 	activeTasks = db.Model(&models.ReturnRouteTask{}).Select("id").Where("enabled = ?", true)
 	if err := db.Model(&models.ReturnRouteStatus{}).Where("task_id IN (?) AND (state = ? OR (last_error IS NOT NULL AND last_error <> ?))", activeTasks, "unknown", "").Count(&result.Abnormal).Error; err != nil {
+		return result, err
+	}
+	if err := db.Model(&models.ReturnRouteReachabilityStatus{}).
+		Where("display = ?", mainlandDisplaySuspectedBlocked).
+		Count(&result.SuspectedBlocked).Error; err != nil {
 		return result, err
 	}
 	if err := db.Model(&models.ReturnRouteEvent{}).Where("occurred_at >= ?", now.Add(-24*time.Hour)).Count(&result.RecentEvents).Error; err != nil {
@@ -355,7 +460,7 @@ func QueryReturnRouteTasks(params ReturnRouteTaskQuery) (ReturnRouteTaskPage, er
 func queryReturnRouteTasks(db *gorm.DB, params ReturnRouteTaskQuery) (ReturnRouteTaskPage, error) {
 	page, pageSize := normalizeReturnRoutePagination(params.Page, params.PageSize)
 	query, err := filterReturnRouteTasks(db.Model(&models.ReturnRouteTask{}), params, db)
-	result := ReturnRouteTaskPage{Tasks: []models.ReturnRouteTask{}, Statuses: []models.ReturnRouteStatus{}, ProbingTaskIDs: []uint{}, Page: page, PageSize: pageSize}
+	result := ReturnRouteTaskPage{Tasks: []models.ReturnRouteTask{}, Statuses: []models.ReturnRouteStatus{}, Reachability: []ReturnRouteReachabilityView{}, ProbingTaskIDs: []uint{}, Page: page, PageSize: pageSize}
 	if err != nil {
 		return result, err
 	}
@@ -363,6 +468,9 @@ func queryReturnRouteTasks(db *gorm.DB, params ReturnRouteTaskQuery) (ReturnRout
 		return result, err
 	}
 	if err := query.Preload("ClientInfo").Order("id ASC").Limit(pageSize).Offset((page - 1) * pageSize).Find(&result.Tasks).Error; err != nil {
+		return result, err
+	}
+	if err := hideInvalidMainlandPingAssociations(db, result.Tasks); err != nil {
 		return result, err
 	}
 	ids := make([]uint, 0, len(result.Tasks))
@@ -383,6 +491,11 @@ func queryReturnRouteTasks(db *gorm.DB, params ReturnRouteTaskQuery) (ReturnRout
 			}
 		}
 	}
+	views, err := reachabilityViewsForTasks(db, result.Tasks)
+	if err != nil {
+		return result, err
+	}
+	result.Reachability = views
 	return result, nil
 }
 
@@ -396,39 +509,101 @@ func filterReturnRouteTasks(query *gorm.DB, params ReturnRouteTaskQuery, db *gor
 		query = query.Where("LOWER(name) LIKE ? OR LOWER(target) LIKE ? OR LOWER(region) LIKE ? OR LOWER(client) LIKE ? OR client IN (?)",
 			pattern, pattern, pattern, pattern, clients)
 	}
-	if carrier := strings.ToLower(strings.TrimSpace(params.Carrier)); carrier != "" {
+	carriers := normalizeReturnRouteQueryValues(params.Carrier, params.Carriers, normalizeLowerTrimmed)
+	for _, carrier := range carriers {
 		if carrier != "mobile" && carrier != "telecom" && carrier != "unicom" {
 			return query, fmt.Errorf("unsupported carrier %q", carrier)
 		}
-		query = query.Where("carrier = ?", carrier)
 	}
-	switch state := strings.ToLower(strings.TrimSpace(params.State)); state {
-	case "":
-	case "disabled":
-		query = query.Where("enabled = ?", false)
-	case "pending":
+	if len(carriers) > 0 {
+		query = query.Where("carrier IN ?", carriers)
+	}
+
+	states := normalizeReturnRouteQueryValues(params.State, params.States, normalizeLowerTrimmed)
+	if len(states) == 0 {
+		return query, nil
+	}
+	validStates := map[string]bool{
+		"disabled":          true,
+		"pending":           true,
+		"probing":           true,
+		"observing":         true,
+		"healthy":           true,
+		"switched":          true,
+		"unknown":           true,
+		"suspected_blocked": true,
+		"single_carrier":    true,
+		"insufficient":      true,
+	}
+	for _, state := range states {
+		if !validStates[state] {
+			return query, fmt.Errorf("unsupported state %q", state)
+		}
+	}
+
+	clauses := make([]string, 0, len(states))
+	args := make([]any, 0, len(states)*3)
+	containsState := func(target string) bool {
+		for _, state := range states {
+			if state == target {
+				return true
+			}
+		}
+		return false
+	}
+	probingIDs := utils.ProbingReturnRouteTaskIDs()
+	if containsState("disabled") {
+		clauses = append(clauses, "(enabled = ?)")
+		args = append(args, false)
+	}
+	if containsState("pending") {
 		allStatuses := db.Model(&models.ReturnRouteStatus{}).Select("task_id")
 		pendingStatuses := db.Model(&models.ReturnRouteStatus{}).Select("task_id").Where("state = ?", "pending")
-		query = query.Where("enabled = ?", true).Where("(id NOT IN (?) OR id IN (?))", allStatuses, pendingStatuses)
-		if probing := utils.ProbingReturnRouteTaskIDs(); len(probing) > 0 {
-			query = query.Where("id NOT IN ?", probing)
+		clause := "(enabled = ? AND (id NOT IN (?) OR id IN (?))"
+		args = append(args, true, allStatuses, pendingStatuses)
+		if len(probingIDs) > 0 {
+			clause += " AND id NOT IN ?"
+			args = append(args, probingIDs)
 		}
-	case "probing":
-		probing := utils.ProbingReturnRouteTaskIDs()
-		if len(probing) == 0 {
-			query = query.Where("1 = 0")
-		} else {
-			query = query.Where("enabled = ? AND id IN ?", true, probing)
-		}
-	case "observing", "healthy", "switched", "unknown":
-		statuses := db.Model(&models.ReturnRouteStatus{}).Select("task_id").Where("state = ?", state)
-		query = query.Where("id IN (?)", statuses)
-		if probing := utils.ProbingReturnRouteTaskIDs(); len(probing) > 0 {
-			query = query.Where("id NOT IN ?", probing)
-		}
-	default:
-		return query, fmt.Errorf("unsupported state %q", state)
+		clauses = append(clauses, clause+")")
 	}
+	if containsState("probing") {
+		if len(probingIDs) == 0 {
+			clauses = append(clauses, "(1 = 0)")
+		} else {
+			clauses = append(clauses, "(enabled = ? AND id IN ?)")
+			args = append(args, true, probingIDs)
+		}
+	}
+	statusStates := make([]string, 0, len(states))
+	for _, state := range states {
+		if state == "observing" || state == "healthy" || state == "switched" || state == "unknown" {
+			statusStates = append(statusStates, state)
+		}
+	}
+	if len(statusStates) > 0 {
+		statuses := db.Model(&models.ReturnRouteStatus{}).Select("task_id").Where("state IN ?", statusStates)
+		clause := "(enabled = ? AND id IN (?)"
+		args = append(args, true, statuses)
+		if len(probingIDs) > 0 {
+			clause += " AND id NOT IN ?"
+			args = append(args, probingIDs)
+		}
+		clauses = append(clauses, clause+")")
+	}
+	if containsState("suspected_blocked") {
+		clauses = append(clauses, "(enabled = ? AND id IN (?))")
+		args = append(args, true, returnRouteReachabilityTaskIDs(db, []string{mainlandDisplaySuspectedBlocked}))
+	}
+	if containsState("single_carrier") {
+		clauses = append(clauses, "(enabled = ? AND id IN (?))")
+		args = append(args, true, returnRouteReachabilityTaskIDs(db, []string{mainlandDisplaySingleCarrier}))
+	}
+	if containsState("insufficient") {
+		clauses = append(clauses, "(enabled = ? AND id IN (?))")
+		args = append(args, true, returnRouteReachabilityTaskIDs(db, []string{mainlandDisplayInsufficient}))
+	}
+	query = query.Where(strings.Join(clauses, " OR "), args...)
 	return query, nil
 }
 
@@ -504,17 +679,23 @@ func filterReturnRouteEvents(query *gorm.DB, params ReturnRouteEventQuery, db *g
 	if params.Start != nil && params.End != nil && !params.End.After(*params.Start) {
 		return query, fmt.Errorf("end must be after start")
 	}
-	if kind := strings.ToLower(strings.TrimSpace(params.Kind)); kind != "" {
-		if kind != "switch" && kind != "recovery" {
+	kinds := normalizeReturnRouteQueryValues(params.Kind, params.Kinds, normalizeLowerTrimmed)
+	for _, kind := range kinds {
+		if kind != "switch" && kind != "recovery" && kind != mainlandEventBlocked && kind != mainlandEventRepeat && kind != mainlandEventRecovery {
 			return query, fmt.Errorf("unsupported event kind %q", kind)
 		}
-		query = query.Where("kind = ?", kind)
 	}
-	if line := normalizeReturnRouteLine(params.ActualLine); line != "" {
+	if len(kinds) > 0 {
+		query = query.Where("kind IN ?", kinds)
+	}
+	actualLines := normalizeReturnRouteQueryValues(params.ActualLine, params.ActualLines, normalizeReturnRouteLine)
+	for _, line := range actualLines {
 		if !isReturnRouteLine(line) {
 			return query, fmt.Errorf("unsupported actual_line %q", line)
 		}
-		query = query.Where("to_line = ?", line)
+	}
+	if len(actualLines) > 0 {
+		query = query.Where("to_line IN ?", actualLines)
 	}
 
 	if keyword := strings.ToLower(strings.TrimSpace(params.Keyword)); keyword != "" {
@@ -526,25 +707,50 @@ func filterReturnRouteEvents(query *gorm.DB, params ReturnRouteEventQuery, db *g
 		query = query.Where("LOWER(task_name) LIKE ? OR LOWER(target) LIKE ? OR LOWER(asn_path) LIKE ? OR LOWER(route_path) LIKE ? OR task_id IN (?)",
 			pattern, pattern, pattern, pattern, tasks)
 	}
-	if carrier := strings.ToLower(strings.TrimSpace(params.Carrier)); carrier != "" {
+	carriers := normalizeReturnRouteQueryValues(params.Carrier, params.Carriers, normalizeLowerTrimmed)
+	for _, carrier := range carriers {
 		if carrier != "mobile" && carrier != "telecom" && carrier != "unicom" {
 			return query, fmt.Errorf("unsupported carrier %q", carrier)
 		}
-		tasks := db.Model(&models.ReturnRouteTask{}).Select("id").Where("carrier = ?", carrier)
-		query = query.Where("(carrier = ? OR ((carrier = '' OR carrier IS NULL) AND task_id IN (?)))", carrier, tasks)
 	}
-	if region := strings.TrimSpace(params.Region); region != "" {
-		tasks := db.Model(&models.ReturnRouteTask{}).Select("id").Where("region = ?", region)
-		query = query.Where("(region = ? OR ((region = '' OR region IS NULL) AND task_id IN (?)))", region, tasks)
+	if len(carriers) > 0 {
+		tasks := db.Model(&models.ReturnRouteTask{}).Select("id").Where("carrier IN ?", carriers)
+		query = query.Where("(carrier IN ? OR ((carrier = '' OR carrier IS NULL) AND task_id IN (?)))", carriers, tasks)
 	}
-	if line := normalizeReturnRouteLine(params.ExpectedLine); line != "" {
+	regions := normalizeReturnRouteQueryValues(params.Region, params.Regions, strings.TrimSpace)
+	if len(regions) > 0 {
+		tasks := db.Model(&models.ReturnRouteTask{}).Select("id").Where("region IN ?", regions)
+		query = query.Where("(region IN ? OR ((region = '' OR region IS NULL) AND task_id IN (?)))", regions, tasks)
+	}
+	expectedLines := normalizeReturnRouteQueryValues(params.ExpectedLine, params.ExpectedLines, normalizeReturnRouteLine)
+	for _, line := range expectedLines {
 		if !isReturnRouteLine(line) {
 			return query, fmt.Errorf("unsupported expected_line %q", line)
 		}
-		tasks := db.Model(&models.ReturnRouteTask{}).Select("id").Where("expected_line = ?", line)
-		query = query.Where("(expected_line = ? OR ((expected_line = '' OR expected_line IS NULL) AND task_id IN (?)))", line, tasks)
+	}
+	if len(expectedLines) > 0 {
+		tasks := db.Model(&models.ReturnRouteTask{}).Select("id").Where("expected_line IN ?", expectedLines)
+		query = query.Where("(expected_line IN ? OR ((expected_line = '' OR expected_line IS NULL) AND task_id IN (?)))", expectedLines, tasks)
 	}
 	return query, nil
+}
+
+func normalizeLowerTrimmed(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func normalizeReturnRouteQueryValues(single string, multiple []string, normalize func(string) string) []string {
+	values := make([]string, 0, len(multiple)+1)
+	seen := make(map[string]bool, len(multiple)+1)
+	for _, raw := range append([]string{single}, multiple...) {
+		value := normalize(raw)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		values = append(values, value)
+	}
+	return values
 }
 
 func normalizeReturnRoutePagination(page, pageSize int) (int, int) {
@@ -626,13 +832,16 @@ func SaveReturnRouteResult(client string, result v2.RouteResultParams) error {
 		}
 	}
 	line, confidence := classifyReturnRouteSignaturesWithRules(hops, rules)
-	probeError := strings.TrimSpace(result.Error)
+	agentError := strings.TrimSpace(result.Error)
+	probeError := agentError
 	if probeError == "" && len(publicIPs) == 0 {
 		probeError = "no route hops were returned"
 	}
 	if probeError == "" && line == "UNKNOWN" {
 		probeError = "route collected, but no carrier ASN was identified"
 	}
+	resolvedTarget, targetReached := inferReturnRouteTargetReached(task, result)
+	pathHops := buildMainlandPathHops(result.Hops, asns)
 
 	var event *models.ReturnRouteEvent
 	var statusSnapshot models.ReturnRouteStatus
@@ -666,10 +875,35 @@ func SaveReturnRouteResult(client string, result v2.RouteResultParams) error {
 			}
 		}
 		statusSnapshot = status
+		if task.MainlandReachabilityEnabled {
+			class := classifyMainlandReachability(agentError, pathHops, line, task.ExpectedLine, status, targetReached, resolvedTarget)
+			if class.LineState != mainlandLineStateSwitching {
+				updateMainlandBaseline(&status, class, status.CurrentLine, now)
+				if status.BaselineReady && status.BaselineLine == strings.TrimSpace(status.CurrentLine) {
+					if class.LineState == mainlandLineStateRebasing {
+						class.LineState = mainlandLineStateStable
+					}
+					if class.TargetReached || (class.Comparable && class.TerminalAnchor != "" && status.BaselineTerminalAnchor == class.TerminalAnchor) {
+						class.Outcome = mainlandOutcomeReachable
+					}
+				}
+				class.BaselineVersion = status.BaselineVersion
+				if err := tx.Save(&status).Error; err != nil {
+					return err
+				}
+				statusSnapshot = status
+			}
+			if err := writeMainlandProbeSample(tx, task, class, now); err != nil {
+				return err
+			}
+		}
 		return tx.Where("occurred_at < ?", now.Add(-returnRouteEventRetention)).Delete(&models.ReturnRouteEvent{}).Error
 	})
 	if err != nil {
 		return err
+	}
+	if task.MainlandReachabilityEnabled {
+		_ = evaluateMainlandReachability(db, task.Client, task.IPVersion, task, now)
 	}
 	if event != nil {
 		if shouldSendReturnRouteEventNotification(task, *event) {
@@ -822,21 +1056,26 @@ func sendReturnRouteNotification(task models.ReturnRouteTask, event models.Retur
 }
 
 func formatReturnRouteNotification(task models.ReturnRouteTask, event models.ReturnRouteEvent) string {
-	carrierNames := map[string]string{
-		"mobile":  "中国移动",
-		"telecom": "中国电信",
-		"unicom":  "中国联通",
-	}
-	carrier := carrierNames[strings.ToLower(strings.TrimSpace(task.Carrier))]
-	if carrier == "" {
-		carrier = task.Carrier
-	}
+	carrier := returnRouteCarrierName(task.Carrier)
 	expectedLine := strings.TrimSpace(event.ExpectedLine)
 	if expectedLine == "" {
 		expectedLine = strings.TrimSpace(task.ExpectedLine)
 	}
 	return fmt.Sprintf("任务：%s\n运营商/地区：%s / %s\n探测目标：%s\n预期线路：%s\n线路变化：%s -> %s\n识别置信度：%.0f%%\n关键 ASN：%s",
 		task.Name, carrier, task.Region, task.Target, expectedLine, event.FromLine, event.ToLine, event.Confidence*100, strings.Join(event.ASNPath, " -> "))
+}
+
+func returnRouteCarrierName(carrier string) string {
+	switch strings.ToLower(strings.TrimSpace(carrier)) {
+	case "mobile":
+		return "中国移动"
+	case "telecom":
+		return "中国电信"
+	case "unicom":
+		return "中国联通"
+	default:
+		return carrier
+	}
 }
 
 func classifyReturnRoute(path models.StringArray) (string, float64) {

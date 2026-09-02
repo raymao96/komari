@@ -4,15 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	logger "github.com/komari-monitor/komari/utils/log"
+	logger "github.com/nuomiiiii/lite/utils/log"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/komari-monitor/komari/database/models"
-	"github.com/komari-monitor/komari/pkg/config"
-	"github.com/komari-monitor/komari/pkg/metric"
+	"github.com/nuomiiiii/lite/database/models"
+	"github.com/nuomiiiii/lite/pkg/config"
+	"github.com/nuomiiiii/lite/pkg/metric"
 )
 
 var (
@@ -1363,7 +1363,7 @@ func GetGPURecordsByClientAndTime(ctx context.Context, clientUUID string, start,
 	recordMap := make(map[gpuKey]*models.GPURecord)
 	now := time.Now().UTC()
 	interval := pingQueryInterval(end.Sub(start), 4000)
-	interval = s.CompatibleSeriesInterval(start, now, interval)
+	interval = s.CompatibleSeriesIntervalForMetric(ctx, gpuMetrics[0], start, now, interval)
 
 	for _, metricName := range gpuMetrics {
 		points, err := s.Series(ctx, metric.AggregateQuery{
@@ -1468,7 +1468,7 @@ func GetPingRecords(ctx context.Context, clientUUID string, taskID int, start, e
 	}
 
 	interval := pingQueryInterval(end.Sub(start), 4000)
-	interval = s.CompatibleSeriesInterval(start, time.Now().UTC(), interval)
+	interval = s.CompatibleSeriesIntervalForMetric(ctx, MetricPingLatency, start, time.Now().UTC(), interval)
 	points, err := s.Series(ctx, metric.AggregateQuery{
 		Query:          query,
 		Aggregation:    metric.AggLast,

@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/komari-monitor/komari/database/models"
-	"github.com/komari-monitor/komari/pkg/rpc"
-	v1 "github.com/komari-monitor/komari/protocol/v1"
-	agent_runtime "github.com/komari-monitor/komari/web/agent"
+	"github.com/nuomiiiii/lite/database/models"
+	"github.com/nuomiiiii/lite/pkg/rpc"
+	v1 "github.com/nuomiiiii/lite/protocol/v1"
+	agent_runtime "github.com/nuomiiiii/lite/web/agent"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -59,12 +59,71 @@ func TestNormalizeDashboardSettingsPreservesCustomModuleSpan(t *testing.T) {
 	normalized, err := normalizeDashboardSettings(dashboardSettings{
 		Preset: dashboardPresetCustom,
 		Modules: []dashboardModuleSetting{
+			{ID: dashboardModuleLatencyTrend, Enabled: true, Span: 6},
+		},
+		RefreshSeconds: 30, ChartRefreshSeconds: 120, RankingLimit: 5,
+		LayoutColumns: dashboardGridColumns,
+	}, true)
+	require.NoError(t, err)
+	assert.Equal(t, 6, normalized.Modules[0].Span)
+	assert.Equal(t, dashboardGridColumns, normalized.LayoutColumns)
+}
+
+func TestNormalizeDashboardSettingsMigratesLegacySixColumnSpans(t *testing.T) {
+	legacy, err := normalizeDashboardSettings(dashboardSettings{
+		Preset: dashboardPresetCustom,
+		Modules: []dashboardModuleSetting{
 			{ID: dashboardModuleLatencyTrend, Enabled: true, Span: 3},
+			{ID: dashboardModuleServerStatus, Enabled: true, Span: 2},
 		},
 		RefreshSeconds: 30, ChartRefreshSeconds: 120, RankingLimit: 5,
 	}, true)
 	require.NoError(t, err)
-	assert.Equal(t, 3, normalized.Modules[0].Span)
+	assert.Equal(t, 6, legacy.Modules[0].Span)
+	assert.Equal(t, 4, legacy.Modules[1].Span)
+	assert.Equal(t, dashboardGridColumns, legacy.LayoutColumns)
+
+	quarter, err := normalizeDashboardSettings(dashboardSettings{
+		Preset: dashboardPresetCustom,
+		Modules: []dashboardModuleSetting{
+			{ID: dashboardModuleCostCenter, Enabled: true, Span: 3},
+		},
+		RefreshSeconds: 30, ChartRefreshSeconds: 120, RankingLimit: 5,
+		LayoutColumns: dashboardGridColumns,
+	}, true)
+	require.NoError(t, err)
+	assert.Equal(t, 3, quarter.Modules[0].Span)
+}
+
+func TestNormalizeDashboardSettingsUnlocksCostCenterForLegacySummaries(t *testing.T) {
+	normalized, err := normalizeDashboardSettings(dashboardSettings{
+		Preset: dashboardPresetCustom,
+		Modules: []dashboardModuleSetting{
+			{ID: dashboardModuleServerStatus, Enabled: true, Span: 4},
+			{ID: dashboardModuleTrafficSummary, Enabled: true, Span: 4},
+			{ID: dashboardModuleStorageSummary, Enabled: true, Span: 4},
+			{ID: dashboardModuleResourceRanking, Enabled: true, Span: 12},
+			{ID: dashboardModuleCostCenter, Enabled: true, Span: 3},
+		},
+		RefreshSeconds: 30, ChartRefreshSeconds: 30, RankingLimit: 5,
+		LayoutColumns: dashboardGridColumns,
+	}, false)
+	require.NoError(t, err)
+	ids := make([]string, 0, 5)
+	for _, module := range normalized.Modules {
+		if module.Enabled {
+			ids = append(ids, module.ID)
+		}
+	}
+	assert.Equal(t, []string{
+		dashboardModuleServerStatus,
+		dashboardModuleTrafficSummary,
+		dashboardModuleStorageSummary,
+		dashboardModuleResourceRanking,
+		dashboardModuleCostCenter,
+	}, ids[:5])
+	assert.Equal(t, 4, normalized.Modules[0].Span)
+	assert.True(t, normalized.Modules[4].Enabled)
 }
 
 func TestNormalizeDashboardSettingsRejectsUnsafeIntervals(t *testing.T) {

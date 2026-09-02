@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	appconfig "github.com/komari-monitor/komari/pkg/config"
-	"github.com/komari-monitor/komari/pkg/migrations"
-	"github.com/komari-monitor/komari/web/api"
+	appconfig "github.com/nuomiiiii/lite/pkg/config"
+	"github.com/nuomiiiii/lite/pkg/migrations"
+	"github.com/nuomiiiii/lite/web/api"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -42,7 +42,7 @@ func TestMetricConfigValidatesSelectedDriverAgainstDSN(t *testing.T) {
 	if _, err := metricConfig("mysql", "./data/metrics.db"); err == nil {
 		t.Fatal("expected mismatched MySQL/SQLite DSN to fail")
 	}
-	postgresConfig, err := metricConfig("postgresql", "host=127.0.0.1 port=5432 user=komari password=secret dbname=komari sslmode=disable")
+	postgresConfig, err := metricConfig("postgresql", "host=127.0.0.1 port=5432 user=lite password=secret dbname=lite sslmode=disable")
 	if err != nil {
 		t.Fatalf("build PostgreSQL config: %v", err)
 	}
@@ -85,8 +85,15 @@ func TestRestrictedControllerOnlyRegistersLoginOAuthAndUpgradeAPIs(t *testing.T)
 	request := httptest.NewRequest(http.MethodGet, APIPath+"/status", nil)
 	response := httptest.NewRecorder()
 	r.ServeHTTP(response, request)
-	if response.Code != http.StatusUnauthorized {
-		t.Fatalf("unauthenticated status code = %d, want %d", response.Code, http.StatusUnauthorized)
+	if response.Code != http.StatusOK {
+		t.Fatalf("unauthenticated status code = %d, want %d", response.Code, http.StatusOK)
+	}
+
+	start := httptest.NewRequest(http.MethodPost, APIPath+"/start", nil)
+	startResponse := httptest.NewRecorder()
+	r.ServeHTTP(startResponse, start)
+	if startResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated start code = %d, want %d", startResponse.Code, http.StatusUnauthorized)
 	}
 }
 

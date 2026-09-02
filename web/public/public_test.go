@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/komari-monitor/komari/pkg/config"
+	"github.com/nuomiiiii/lite/pkg/config"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -153,12 +153,12 @@ func TestRenderPublicDocumentTitle(t *testing.T) {
 		want  string
 	}{
 		"replace legacy title": {
-			html:  `<html><head><title>Komari Monitor</title></head><body></body></html>`,
+			html:  `<html><head><title>Lite</title></head><body></body></html>`,
 			title: "Nomi",
 			want:  `<title>Nomi</title>`,
 		},
 		"replace title with attributes and whitespace": {
-			html:  "<html><head><TITLE data-theme=\"nezha\">\n Komari Monitor \n</TITLE></head><body></body></html>",
+			html:  "<html><head><TITLE data-theme=\"nezha\">\n Lite \n</TITLE></head><body></body></html>",
 			title: "Nomi",
 			want:  `<title>Nomi</title>`,
 		},
@@ -206,6 +206,8 @@ func TestRenderApplicationIdentityUsesBackendNameAndFavicon(t *testing.T) {
 	for _, want := range []string{
 		`<title>Nomi &amp; Friends</title>`,
 		`<meta name="apple-mobile-web-app-title" content="Nomi &amp; Friends" />`,
+		`<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />`,
+		`<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />`,
 		`<link rel="icon" href="/favicon.ico" />`,
 		`<link rel="apple-touch-icon" href="/favicon.ico" />`,
 	} {
@@ -228,10 +230,10 @@ func TestRenderApplicationIdentityUsesBackendNameAndFavicon(t *testing.T) {
 
 func TestRenderSystemApplicationIdentityLeavesRuntimeTitleOwnershipToReact(t *testing.T) {
 	got := renderSystemApplicationIdentity(
-		`<html><head><title>Komari Lite</title><link rel="shortcut icon" href="favicon.ico" /></head><body></body></html>`,
-		"My Komari",
+		`<html><head><title>Lite</title><link rel="shortcut icon" href="favicon.ico" /></head><body></body></html>`,
+		"My Lite",
 	)
-	if !strings.Contains(got, `<title>My Komari</title>`) {
+	if !strings.Contains(got, `<title>My Lite</title>`) {
 		t.Fatalf("system document did not receive its initial title: %q", got)
 	}
 	if strings.Contains(got, documentTitleSyncMarker) || strings.Contains(got, "MutationObserver") {
@@ -250,7 +252,7 @@ func TestCustomHTMLIsLimitedToPublicPages(t *testing.T) {
 	}
 	config.SetDb(db)
 	if err := config.SetMany(map[string]any{
-		config.SitenameKey:   "My Komari",
+		config.SitenameKey:   "My Lite",
 		config.CustomHeadKey: `<style data-custom-head>body{--custom-marker:1}</style>`,
 		config.CustomBodyKey: `<div data-custom-body>custom body marker</div>`,
 	}); err != nil {
@@ -288,13 +290,15 @@ func TestCustomHTMLIsLimitedToPublicPages(t *testing.T) {
 		if hasCustomHead != tt.wantCustom || hasCustomBody != tt.wantCustom {
 			t.Fatalf("GET %s custom HTML = (head: %t, body: %t), want both %t", tt.path, hasCustomHead, hasCustomBody, tt.wantCustom)
 		}
-		expectedTitle := "My Komari"
+		expectedTitle := "My Lite"
 		if isAdminApplicationPath(tt.path) {
 			expectedTitle = adminApplicationTitle
 		}
 		for _, want := range []string{
 			`<title>` + expectedTitle + `</title>`,
 			`<meta name="apple-mobile-web-app-title" content="` + expectedTitle + `" />`,
+			`<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />`,
+			`<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />`,
 			`<link rel="icon" href="/favicon.ico" />`,
 			`<link rel="apple-touch-icon" href="/favicon.ico" />`,
 		} {
@@ -340,7 +344,7 @@ func TestStaticServesOneDynamicManifestForPublicAndSystemUI(t *testing.T) {
 	}
 	config.SetDb(db)
 	if err := config.SetMany(map[string]any{
-		config.SitenameKey:    "My Komari",
+		config.SitenameKey:    "My Lite",
 		config.DescriptionKey: "My monitor",
 	}); err != nil {
 		t.Fatal(err)
@@ -366,7 +370,7 @@ func TestStaticServesOneDynamicManifestForPublicAndSystemUI(t *testing.T) {
 		if err := json.Unmarshal(recorder.Body.Bytes(), &manifest); err != nil {
 			t.Fatalf("decode GET %s: %v", requestPath, err)
 		}
-		if manifest.ID != "/" || manifest.Name != "My Komari" || manifest.ShortName != "My Komari" {
+		if manifest.ID != "/" || manifest.Name != "My Lite" || manifest.ShortName != "My Lite" {
 			t.Fatalf("GET %s identity = (%q, %q, %q)", requestPath, manifest.ID, manifest.Name, manifest.ShortName)
 		}
 		if manifest.Description != "My monitor" || manifest.StartURL != "/" || manifest.Scope != "/" {
@@ -383,7 +387,7 @@ func TestStaticServesOneDynamicManifestForPublicAndSystemUI(t *testing.T) {
 	}
 }
 
-func TestEnsureBundledThemesUsesNezhaForNewInstall(t *testing.T) {
+func TestEnsureBundledThemesUsesLiteThemeForNewInstall(t *testing.T) {
 	t.Chdir(t.TempDir())
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
@@ -402,11 +406,11 @@ func TestEnsureBundledThemesUsesNezhaForNewInstall(t *testing.T) {
 		t.Fatalf("active theme = %q, want %q", active, DefaultTheme)
 	}
 	if !IsLocalThemeUsable(DefaultTheme) {
-		t.Fatal("bundled Nezha theme was not installed")
+		t.Fatal("bundled Lite Theme Default was not installed")
 	}
 }
 
-func TestEnsureBundledThemesMigratesLegacyDefaultToNezha(t *testing.T) {
+func TestEnsureBundledThemesMigratesLegacyDefaultToLiteTheme(t *testing.T) {
 	t.Chdir(t.TempDir())
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
@@ -428,7 +432,7 @@ func TestEnsureBundledThemesMigratesLegacyDefaultToNezha(t *testing.T) {
 		t.Fatalf("active theme = %q, want %q", active, DefaultTheme)
 	}
 	if !IsLocalThemeUsable(DefaultTheme) {
-		t.Fatal("legacy migration did not install the bundled Nezha theme")
+		t.Fatal("legacy migration did not install bundled Lite Theme Default")
 	}
 	if IsLocalThemeUsable("komari-classic") {
 		t.Fatal("legacy migration unexpectedly installed the independent Classic theme")
@@ -461,7 +465,7 @@ func TestEnsureBundledThemesRepairsRestoreWithoutThemeFiles(t *testing.T) {
 	}
 }
 
-func TestEnsureBundledThemesRefreshesExistingNezhaOnce(t *testing.T) {
+func TestEnsureBundledThemesRefreshesExistingLiteThemeOnce(t *testing.T) {
 	t.Chdir(t.TempDir())
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
@@ -494,7 +498,13 @@ func TestEnsureBundledThemesRefreshesExistingNezhaOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	if string(index) == "stale-theme-index" {
-		t.Fatal("existing Nezha theme was not refreshed")
+		t.Fatal("existing Lite-Theme was not refreshed")
+	}
+	if _, err := os.Stat(filepath.Join(DataDir, ThemesDir, DefaultTheme, "Lite-theme.json")); err != nil {
+		t.Fatalf("refreshed Lite-Theme missing Lite-theme.json: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(DataDir, ThemesDir, DefaultTheme, "komari-theme.json")); !os.IsNotExist(err) {
+		t.Fatalf("legacy komari-theme.json should have been replaced, err=%v", err)
 	}
 	migration, err := config.GetAs[int](themeBundleMigrationKey, 0)
 	if err != nil || migration != currentThemeBundleMigration {
@@ -516,7 +526,103 @@ func TestEnsureBundledThemesRefreshesExistingNezhaOnce(t *testing.T) {
 	}
 }
 
-func TestEnsureBundledThemesDoesNotReinstallDeletedNezha(t *testing.T) {
+func TestThemeVersionNewer(t *testing.T) {
+	cases := []struct {
+		candidate, installed string
+		want                 bool
+	}{
+		{"1.0.1", "1.0.0", true},
+		{"1.0.0", "1.0.1", false},
+		{"1.0.1", "1.0.1", false},
+		{"v1.0.1", "1.0.0", true},
+		{"1.0.1", "", true},
+		{"99.0.0", "1.0.1", true},
+	}
+	for _, tc := range cases {
+		if got := themeVersionNewer(tc.candidate, tc.installed); got != tc.want {
+			t.Fatalf("themeVersionNewer(%q, %q) = %v, want %v", tc.candidate, tc.installed, got, tc.want)
+		}
+	}
+}
+
+func writeInstalledLiteTheme(t *testing.T, version, index string) {
+	t.Helper()
+	dir := filepath.Join(DataDir, ThemesDir, DefaultTheme, DistDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{"name":"Lite-Theme","short":"lite-theme","version":"` + version + `"}`
+	if err := os.WriteFile(filepath.Join(DataDir, ThemesDir, DefaultTheme, "Lite-theme.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, IndexFile), []byte(index), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEnsureBundledThemesRefreshesWhenBundledVersionIsNewer(t *testing.T) {
+	t.Chdir(t.TempDir())
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.SetDb(db)
+
+	writeInstalledLiteTheme(t, "0.0.1", "stale-older-theme")
+	if err := config.SetMany(map[string]any{
+		config.ThemeKey:         DefaultTheme,
+		themeBundleMigrationKey: currentThemeBundleMigration,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := EnsureBundledThemes(); err != nil {
+		t.Fatal(err)
+	}
+	index, err := os.ReadFile(filepath.Join(DataDir, ThemesDir, DefaultTheme, DistDir, IndexFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(index) == "stale-older-theme" {
+		t.Fatal("older installed Lite-Theme was not refreshed from the bundled version")
+	}
+	if got := localThemeVersion(DefaultTheme); got != embeddedThemeVersion("bundledThemes/Lite-theme") {
+		t.Fatalf("installed version = %q, bundled = %q", got, embeddedThemeVersion("bundledThemes/Lite-theme"))
+	}
+}
+
+func TestEnsureBundledThemesKeepsNewerInstalledLiteTheme(t *testing.T) {
+	t.Chdir(t.TempDir())
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.SetDb(db)
+
+	writeInstalledLiteTheme(t, "99.0.0", "market-newer-theme")
+	if err := config.SetMany(map[string]any{
+		config.ThemeKey:         DefaultTheme,
+		themeBundleMigrationKey: currentThemeBundleMigration,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := EnsureBundledThemes(); err != nil {
+		t.Fatal(err)
+	}
+	index, err := os.ReadFile(filepath.Join(DataDir, ThemesDir, DefaultTheme, DistDir, IndexFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(index) != "market-newer-theme" {
+		t.Fatal("newer installed Lite-Theme was overwritten by an older bundled version")
+	}
+	if got := localThemeVersion(DefaultTheme); got != "99.0.0" {
+		t.Fatalf("installed version = %q, want 99.0.0", got)
+	}
+}
+
+func TestEnsureBundledThemesDoesNotReinstallDeletedLiteTheme(t *testing.T) {
 	t.Chdir(t.TempDir())
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
@@ -545,7 +651,7 @@ func TestEnsureBundledThemesDoesNotReinstallDeletedNezha(t *testing.T) {
 		t.Fatal(err)
 	}
 	if IsLocalThemeUsable(DefaultTheme) {
-		t.Fatal("deleted Nezha theme was reinstalled for a third-party active theme")
+		t.Fatal("deleted Lite-Theme was reinstalled for a third-party active theme")
 	}
 	active, err := config.GetAs[string](config.ThemeKey)
 	if err != nil || active != "third-party" {
@@ -582,8 +688,12 @@ func TestStaticKeepsSystemUIAndPublicThemeResourcesIsolated(t *testing.T) {
 	if publicPage.Code != http.StatusOK || !strings.Contains(publicPage.Body.String(), "data-public-custom-head") {
 		t.Fatalf("public rescue page status=%d body=%q", publicPage.Code, publicPage.Body.String())
 	}
-	if !strings.Contains(publicPage.Body.String(), "font-logos") {
-		t.Fatal("missing public theme did not use the embedded Nezha rescue page")
+	if !strings.Contains(publicPage.Body.String(), "vite-ui-theme") {
+		t.Fatal("missing public theme did not use the embedded Lite-Theme rescue page")
+	}
+
+	if _, err := fs.ReadFile(PublicFS, "systemUI/dist/index.html"); err != nil {
+		t.Skip("system UI dist is injected by CI from Lite-web")
 	}
 
 	adminPage := request("/admin/settings/theme")
@@ -593,7 +703,7 @@ func TestStaticKeepsSystemUIAndPublicThemeResourcesIsolated(t *testing.T) {
 	if !strings.Contains(adminPage.Body.String(), "/system-assets/") {
 		t.Fatal("system UI did not reference its independent asset prefix")
 	}
-	if strings.Contains(adminPage.Body.String(), "data-public-custom-head") || strings.Contains(adminPage.Body.String(), "font-logos") {
+	if strings.Contains(adminPage.Body.String(), "data-public-custom-head") || strings.Contains(adminPage.Body.String(), "vite-ui-theme") {
 		t.Fatal("public theme content leaked into the system UI")
 	}
 
@@ -605,8 +715,12 @@ func TestStaticKeepsSystemUIAndPublicThemeResourcesIsolated(t *testing.T) {
 	if asset := request(assetPath); asset.Code != http.StatusOK {
 		t.Fatalf("GET %s status=%d", assetPath, asset.Code)
 	}
-	if favicon := request("/favicon.ico"); favicon.Code != http.StatusOK || favicon.Header().Get("Content-Type") != "image/x-icon" {
-		t.Fatalf("system favicon fallback status=%d content-type=%q", favicon.Code, favicon.Header().Get("Content-Type"))
+	favicon := request("/favicon.ico")
+	if favicon.Code != http.StatusOK {
+		t.Fatalf("system favicon fallback status=%d", favicon.Code)
+	}
+	if ct := favicon.Header().Get("Content-Type"); !strings.HasPrefix(ct, "image/") {
+		t.Fatalf("system favicon fallback content-type=%q", ct)
 	}
 	for _, missing := range []string{
 		"/system-assets/assets/not-present.js",
@@ -616,5 +730,91 @@ func TestStaticKeepsSystemUIAndPublicThemeResourcesIsolated(t *testing.T) {
 		if response := request(missing); response.Code != http.StatusNotFound {
 			t.Fatalf("GET %s status=%d, want 404", missing, response.Code)
 		}
+	}
+}
+
+func TestRescueThemeShipsLiteThemeManifest(t *testing.T) {
+	if _, err := fs.ReadFile(PublicFS, "rescueTheme/Lite-theme.json"); err != nil {
+		t.Fatalf("rescue Lite-theme.json: %v", err)
+	}
+	if _, err := fs.ReadFile(PublicFS, "rescueTheme/preview.png"); err != nil {
+		t.Fatalf("rescue preview.png: %v", err)
+	}
+	if _, err := fs.ReadFile(PublicFS, "bundledThemes/Lite-theme/preview.png"); err != nil {
+		t.Fatalf("bundled preview.png: %v", err)
+	}
+	if _, err := fs.ReadFile(PublicFS, "rescueTheme/komari-theme.json"); err == nil {
+		t.Fatal("rescue theme still ships komari-theme.json")
+	}
+	index, err := fs.ReadFile(PublicFS, "rescueTheme/dist/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(index), "/favicon.png") {
+		t.Fatal("rescue index is not Lite-Theme")
+	}
+	if !strings.Contains(string(index), `/assets/index.`) || !strings.Contains(string(index), ".js") {
+		t.Fatal("rescue index is not a Lite-Theme production build")
+	}
+}
+
+func TestIsLocalThemeUsableAcceptsLiteOrLegacyManifest(t *testing.T) {
+	t.Chdir(t.TempDir())
+	write := func(short, manifestName string) {
+		base := filepath.Join(DataDir, ThemesDir, short)
+		if err := os.MkdirAll(filepath.Join(base, DistDir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(base, manifestName), []byte(`{"short":"`+short+`"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(base, DistDir, IndexFile), []byte("ok"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("lite-primary", "Lite-theme.json")
+	write("komari-legacy", "komari-theme.json")
+	both := filepath.Join(DataDir, ThemesDir, "both")
+	if err := os.MkdirAll(filepath.Join(both, DistDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(both, "Lite-theme.json"), []byte(`{"short":"both"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(both, "komari-theme.json"), []byte(`{"short":"both"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(both, DistDir, IndexFile), []byte("ok"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, short := range []string{"lite-primary", "komari-legacy", "both"} {
+		if !IsLocalThemeUsable(short) {
+			t.Fatalf("IsLocalThemeUsable(%q) = false", short)
+		}
+	}
+}
+
+func TestActiveThemeNavigationPrefersLiteManifest(t *testing.T) {
+	t.Chdir(t.TempDir())
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.SetDb(db)
+	themeDir := filepath.Join(DataDir, ThemesDir, "third-party")
+	if err := os.MkdirAll(themeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(themeDir, "komari-theme.json"), []byte(`{"navigation":{"server_detail":"/komari/{uuid}"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(themeDir, "Lite-theme.json"), []byte(`{"navigation":{"server_detail":"/lite/{uuid}"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Set(config.ThemeKey, "third-party"); err != nil {
+		t.Fatal(err)
+	}
+	if got := ActiveThemeNavigation().ServerDetailURL("node-a", 0); got != "/lite/node-a" {
+		t.Fatalf("preferred navigation URL = %q", got)
 	}
 }

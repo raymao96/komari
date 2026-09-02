@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/komari-monitor/komari/database/metricstore"
-	v1 "github.com/komari-monitor/komari/protocol/v1"
-	"github.com/komari-monitor/komari/web/connection"
+	"github.com/nuomiiiii/lite/database/metricstore"
+	v1 "github.com/nuomiiiii/lite/protocol/v1"
+	"github.com/nuomiiiii/lite/web/connection"
 )
 
 var (
@@ -34,6 +34,19 @@ func GetConnectedClients() map[string]*connection.SafeConn {
 		clientsCopy[k] = v
 	}
 	return clientsCopy
+}
+
+// IsPresent matches dashboard online: WebSocket or a live HTTP presence TTL.
+func IsPresent(uuid string) bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	if _, ok := connectedClients[uuid]; ok {
+		return true
+	}
+	if presence, ok := presenceOnly[uuid]; ok && presence.expire.After(time.Now()) {
+		return true
+	}
+	return false
 }
 
 func SetConnectedClients(uuid string, conn *connection.SafeConn) {

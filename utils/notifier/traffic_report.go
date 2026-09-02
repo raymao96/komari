@@ -6,15 +6,15 @@ import (
 	"strings"
 	"time"
 
-	clientdb "github.com/komari-monitor/komari/database/clients"
-	"github.com/komari-monitor/komari/database/dbcore"
-	"github.com/komari-monitor/komari/database/models"
-	messageevent "github.com/komari-monitor/komari/database/models/messageEvent"
-	"github.com/komari-monitor/komari/database/trafficledger"
-	"github.com/komari-monitor/komari/pkg/config"
-	"github.com/komari-monitor/komari/pkg/corn"
-	logger "github.com/komari-monitor/komari/utils/log"
-	"github.com/komari-monitor/komari/utils/messageSender"
+	clientdb "github.com/nuomiiiii/lite/database/clients"
+	"github.com/nuomiiiii/lite/database/dbcore"
+	"github.com/nuomiiiii/lite/database/models"
+	messageevent "github.com/nuomiiiii/lite/database/models/messageEvent"
+	"github.com/nuomiiiii/lite/database/trafficledger"
+	"github.com/nuomiiiii/lite/pkg/config"
+	"github.com/nuomiiiii/lite/pkg/corn"
+	logger "github.com/nuomiiiii/lite/utils/log"
+	"github.com/nuomiiiii/lite/utils/messageSender"
 )
 
 var beijingLocation = time.FixedZone("Asia/Shanghai", 8*60*60)
@@ -64,7 +64,7 @@ func InitTrafficReportSchedule() {
 	}
 }
 
-// ReloadTrafficReportSchedule applies the configured HH:mm time without restarting Komari.
+// ReloadTrafficReportSchedule applies the configured HH:mm time without restarting Lite.
 func ReloadTrafficReportSchedule() error {
 	reportTime, err := config.GetAs[string](config.TrafficReportTimeKey, config.DefaultTrafficReportTime)
 	if err != nil {
@@ -302,7 +302,7 @@ func formatTrafficReportLine(client models.Client, suffix string, usage trafficU
 		switch rule {
 		case "up", "down", "sum", "min", "max":
 		default:
-			rule = "max"
+			rule = "sum"
 		}
 		used := computeUsedByType(rule, usage.Up, usage.Down)
 		parts = append(parts, fmt.Sprintf("计费流量 %s（%s）", humanBytes(used), rule))

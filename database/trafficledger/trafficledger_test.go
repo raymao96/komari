@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/komari-monitor/komari/database/models"
+	"github.com/nuomiiiii/lite/database/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
@@ -302,7 +302,8 @@ func TestBillableUsage(t *testing.T) {
 	assert.Equal(t, int64(10), BillableUsage("min", 10, 20))
 	assert.Equal(t, int64(20), BillableUsage("max", 10, 20))
 	assert.Equal(t, int64(30), BillableUsage(" SUM ", 10, 20))
-	assert.Equal(t, int64(20), BillableUsage("", 10, 20))
+	assert.Equal(t, int64(30), BillableUsage("", 10, 20))
+	assert.Equal(t, int64(30), BillableUsage("unknown", 10, 20))
 }
 
 func zeroDailyUsage(_ context.Context, _ string, start, end time.Time) (map[string]Usage, error) {

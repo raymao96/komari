@@ -40,10 +40,11 @@ type Client struct {
 	ExpiredAt              *time.Time `json:"expired_at" gorm:"type:timestamp"`
 	Group                  string     `json:"group" gorm:"type:varchar(100)"`
 	Tags                   string     `json:"tags" gorm:"type:text"` // split by ';'
+	Bandwidth              string     `json:"bandwidth" gorm:"type:varchar(64);not null;default:''"`
 	Hidden                 bool       `json:"hidden" gorm:"default:false"`
 	RemoteControlProtected bool       `json:"remote_control_protected" gorm:"default:false"`
 	TrafficLimit           int64      `json:"traffic_limit" gorm:"type:bigint"`
-	TrafficLimitType       string     `json:"traffic_limit_type" gorm:"type:varchar(10);default:'max'"` // 流量阈值类型：sum max min up down
+	TrafficLimitType       string     `json:"traffic_limit_type" gorm:"type:varchar(10);default:'sum'"` // 流量阈值类型：sum max min up down
 	TrafficResetDay        *int       `json:"traffic_reset_day,omitempty" gorm:"type:int"`              // nil: follow agent; 0: disabled; 1-31: monthly reset day
 	TrafficResetAllowance  int64      `json:"traffic_reset_allowance" gorm:"type:bigint;not null;default:0"`
 	TrafficResetCycle      string     `json:"traffic_reset_cycle,omitempty" gorm:"type:varchar(10);not null;default:''"`

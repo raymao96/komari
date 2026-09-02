@@ -17,9 +17,14 @@ on:
         default: main
         type: string
       web_ref:
-        description: Branch or tag in nuomiiiii/komari-web
-        required: true
-        default: main
+        description: komari-web branch or tag. Leave empty to use the same x.y.z tag as this release.
+        required: false
+        default: ""
+        type: string
+      theme_ref:
+        description: Lite-theme branch or tag. Leave empty to use main.
+        required: false
+        default: ""
         type: string
 
 permissions:
@@ -47,6 +52,7 @@ jobs:
           VERSION: ${{ inputs.version }}
           REQUESTED_HASH: ${{ inputs.version_hash }}
           WEB_REF: ${{ inputs.web_ref }}
+          THEME_REF: ${{ inputs.theme_ref }}
         shell: bash
         run: |
           set -euo pipefail
@@ -59,8 +65,8 @@ jobs:
           VERSION_HASH="$REQUESTED_HASH"
           if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             EXISTING_BODY="$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json body --jq .body)"
-            if [ -z "$VERSION_HASH" ] && [[ "$EXISTING_BODY" =~ komari-version-hash:[[:space:]]*([A-Za-z0-9]{7}) ]]; then
-              VERSION_HASH="${BASH_REMATCH[1]}"
+            if [ -z "$VERSION_HASH" ] && [[ "$EXISTING_BODY" =~ (lite|komari)-version-hash:[[:space:]]*([A-Za-z0-9]{7}) ]]; then
+              VERSION_HASH="${BASH_REMATCH[2]}"
             fi
           fi
 
@@ -73,15 +79,29 @@ jobs:
             exit 1
           fi
 
-          if [ -z "$WEB_REF" ]; then
-            echo "Komari Web ref cannot be empty." >&2
+          WEB_REF="${WEB_REF:-$VERSION}"
+          OWNER="${GITHUB_REPOSITORY_OWNER}"
+          WEB_REPO="${OWNER}/komari-web"
+          if git ls-remote --exit-code "https://github.com/${WEB_REPO}.git" "refs/tags/${WEB_REF}" >/dev/null; then
+            echo "Using komari-web tag ${WEB_REF}"
+          elif git ls-remote --exit-code "https://github.com/${WEB_REPO}.git" "refs/heads/${WEB_REF}" >/dev/null; then
+            echo "Using komari-web branch ${WEB_REF}"
+          else
+            echo "komari-web has no tag or branch named ${WEB_REF}. Publish komari-web ${VERSION} first." >&2
+            exit 1
+          fi
+
+          WEB_VERSION="$(gh api "repos/${WEB_REPO}/contents/package.json?ref=${WEB_REF}" --jq .content | python3 -c "import json,sys,base64; print(json.loads(base64.b64decode(sys.stdin.read()).decode())['version'])")"
+          if [ "$WEB_VERSION" != "$VERSION" ]; then
+            echo "komari-web ${WEB_REF} is version ${WEB_VERSION}, expected ${VERSION}." >&2
             exit 1
           fi
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "version_hash=$VERSION_HASH" >> "$GITHUB_OUTPUT"
           echo "web_ref=$WEB_REF" >> "$GITHUB_OUTPUT"
-          echo "Release display version: $VERSION ($VERSION_HASH)"
+          echo "theme_ref=${THEME_REF:-main}" >> "$GITHUB_OUTPUT"
+          echo "Release display version: $VERSION ($VERSION_HASH), komari-web ${WEB_REF} (${WEB_VERSION})"
 
       - name: Create version-only tag and release
         env:
@@ -114,7 +134,7 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               --target "$TARGET_SHA" \
               --title "$VERSION" \
-              --notes "<!-- komari-version-hash: $VERSION_HASH -->" \
+              --notes "<!-- lite-version-hash: $VERSION_HASH -->" \
               --latest \
               --verify-tag
           fi
@@ -125,6 +145,7 @@ jobs:
           VERSION: ${{ steps.metadata.outputs.version }}
           VERSION_HASH: ${{ steps.metadata.outputs.version_hash }}
           WEB_REF: ${{ steps.metadata.outputs.web_ref }}
+          THEME_REF: ${{ steps.metadata.outputs.theme_ref }}
         shell: bash
         run: |
           gh workflow run release.yml \
@@ -132,4 +153,5 @@ jobs:
             --ref "$VERSION" \
             -f tag="$VERSION" \
             -f version_hash="$VERSION_HASH" \
-            -f web_ref="$WEB_REF"
+            -f web_ref="$WEB_REF" \
+            -f theme_ref="$THEME_REF"

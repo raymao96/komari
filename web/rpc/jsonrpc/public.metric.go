@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/komari-monitor/komari/database/clients"
-	"github.com/komari-monitor/komari/database/metricstore"
-	"github.com/komari-monitor/komari/database/models"
-	"github.com/komari-monitor/komari/database/tasks"
-	"github.com/komari-monitor/komari/pkg/metric"
-	"github.com/komari-monitor/komari/pkg/rpc"
+	"github.com/nuomiiiii/lite/database/clients"
+	"github.com/nuomiiiii/lite/database/metricstore"
+	"github.com/nuomiiiii/lite/database/models"
+	"github.com/nuomiiiii/lite/database/tasks"
+	"github.com/nuomiiiii/lite/pkg/metric"
+	"github.com/nuomiiiii/lite/pkg/rpc"
 )
 
 const defaultMetricQueryPoints = 500
@@ -239,7 +239,7 @@ func publicQueryMetrics(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc
 		interval := time.Duration(0)
 		if metricDownsample {
 			interval = metricDownsampleInterval(end.Sub(start), maxPoints)
-			interval = store.CompatibleSeriesInterval(start, now, interval)
+			interval = store.CompatibleSeriesIntervalForMetric(ctx, metricKey, start, now, interval)
 		}
 		for _, entityID := range entityIDs {
 			query := metric.Query{
@@ -384,7 +384,7 @@ func publicGetPingMetricStats(ctx context.Context, req *rpc.JsonRpcRequest) (any
 	}
 	now := time.Now().UTC()
 	interval := metricDownsampleInterval(end.Sub(start), maxPoints)
-	interval = store.CompatibleSeriesInterval(start, now, interval)
+	interval = store.CompatibleSeriesIntervalForMetric(ctx, metricstore.MetricPingLatency, start, now, interval)
 
 	queries := make([]metric.AggregateQuery, 0, len(entityIDs))
 	for _, entityID := range entityIDs {

@@ -6,12 +6,12 @@ import (
 	"sort"
 	"time"
 
-	"github.com/komari-monitor/komari/database/dbcore"
-	"github.com/komari-monitor/komari/database/metricstore"
-	"github.com/komari-monitor/komari/database/models"
-	"github.com/komari-monitor/komari/database/notificationdefaults"
-	"github.com/komari-monitor/komari/utils"
-	logger "github.com/komari-monitor/komari/utils/log"
+	"github.com/nuomiiiii/lite/database/dbcore"
+	"github.com/nuomiiiii/lite/database/metricstore"
+	"github.com/nuomiiiii/lite/database/models"
+	"github.com/nuomiiiii/lite/database/notificationdefaults"
+	"github.com/nuomiiiii/lite/utils"
+	logger "github.com/nuomiiiii/lite/utils/log"
 	"gorm.io/gorm"
 )
 
@@ -83,7 +83,8 @@ func DeletePingTask(id []uint) error {
 }
 
 func deletePingTaskRows(db *gorm.DB, ids []uint) error {
-	return db.Transaction(func(tx *gorm.DB) error {
+	var detached []models.ReturnRouteTask
+	err := db.Transaction(func(tx *gorm.DB) error {
 		for _, id := range ids {
 			if err := metricstore.EnqueuePingTaskCleanup(tx, id); err != nil {
 				return fmt.Errorf("queue ping task %d metric cleanup: %w", id, err)
@@ -97,6 +98,11 @@ func deletePingTaskRows(db *gorm.DB, ids []uint) error {
 		if err := tx.Where("task_id IN ?", ids).Delete(&models.PingLossNotification{}).Error; err != nil {
 			return err
 		}
+		cleared, err := detachReturnRouteMainlandPing(tx, ids, nil)
+		if err != nil {
+			return fmt.Errorf("clear return-route mainland ping association: %w", err)
+		}
+		detached = cleared
 
 		result := tx.Where("id IN ?", ids).Delete(&models.PingTask{})
 		if result.Error != nil {
@@ -107,6 +113,13 @@ func deletePingTaskRows(db *gorm.DB, ids []uint) error {
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	if len(detached) > 0 {
+		_ = recomputeMainlandReachabilityKeys(db, mainlandKeysFromTasks(detached), time.Now().UTC())
+	}
+	return nil
 }
 
 // EditPingTask 批量更新延迟监测任务配置。

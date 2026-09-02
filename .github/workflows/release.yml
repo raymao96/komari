@@ -12,9 +12,14 @@ on:
         required: true
         type: string
       web_ref:
-        description: Branch or tag in raymao96/komari-web
+        description: Branch or tag in the sibling komari-web repository
         required: true
         default: github-nuomiiiii
+        type: string
+      theme_ref:
+        description: Lite-theme branch or tag. Leave empty to use main.
+        required: false
+        default: main
         type: string
 
 permissions:
@@ -33,6 +38,7 @@ jobs:
       version: ${{ steps.validate.outputs.version }}
       version_hash: ${{ steps.validate.outputs.version_hash }}
       web_ref: ${{ steps.validate.outputs.web_ref }}
+      theme_ref: ${{ steps.validate.outputs.theme_ref }}
     steps:
       - name: Validate release metadata
         id: validate
@@ -40,15 +46,18 @@ jobs:
           VERSION: ${{ inputs.tag }}
           VERSION_HASH: ${{ inputs.version_hash }}
           WEB_REF: ${{ inputs.web_ref }}
+          THEME_REF: ${{ inputs.theme_ref }}
         shell: bash
         run: |
           set -euo pipefail
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid version: $VERSION" >&2; exit 1; }
           [[ "$VERSION_HASH" =~ ^[A-Za-z0-9]{7}$ ]] || { echo "Invalid version identifier: $VERSION_HASH" >&2; exit 1; }
-          [ -n "$WEB_REF" ] || { echo "Komari Web ref cannot be empty." >&2; exit 1; }
+          [ -n "$WEB_REF" ] || { echo "komari-web ref cannot be empty." >&2; exit 1; }
+          THEME_REF="${THEME_REF:-main}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "version_hash=$VERSION_HASH" >> "$GITHUB_OUTPUT"
           echo "web_ref=$WEB_REF" >> "$GITHUB_OUTPUT"
+          echo "theme_ref=$THEME_REF" >> "$GITHUB_OUTPUT"
 
   build-frontend:
     needs: prepare
@@ -61,7 +70,9 @@ jobs:
         uses: ./.github/actions/build-frontend
         with:
           ref: ${{ needs.prepare.outputs.web_ref }}
-          artifact-name: komari-frontend
+          theme-ref: ${{ needs.prepare.outputs.theme_ref }}
+          expected-version: ${{ needs.prepare.outputs.version }}
+          artifact-name: lite-frontend
 
   build-and-attach-binaries:
     needs: [prepare, build-frontend]
@@ -129,16 +140,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          BINARY_NAME="komari-${GOOS}-${GOARCH}${{ matrix.binary_extension }}"
+          BINARY_NAME="Lite-${GOOS}-${GOARCH}${{ matrix.binary_extension }}"
           go build -trimpath \
-            -ldflags="-s -w -X github.com/komari-monitor/komari/utils.CurrentVersion=${VERSION} -X github.com/komari-monitor/komari/utils.VersionHash=${VERSION_HASH}" \
+            -ldflags="-s -w -X github.com/raymao96/komari/utils.CurrentVersion=${VERSION} -X github.com/raymao96/komari/utils.VersionHash=${VERSION_HASH}" \
             -o "$BINARY_NAME"
 
       - name: Upload binary as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: komari-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: komari-${{ matrix.goos }}-${{ matrix.goarch }}*
+          name: Lite-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: Lite-${{ matrix.goos }}-${{ matrix.goarch }}*
 
       - name: Upload binary to release
         env:
@@ -146,7 +157,7 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
         shell: bash
         run: |
-          BINARY_NAME="komari-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.binary_extension }}"
+          BINARY_NAME="Lite-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.binary_extension }}"
           gh release upload "$VERSION" "$BINARY_NAME" --repo "$GITHUB_REPOSITORY" --clobber
 
   build-and-push-docker:
@@ -159,10 +170,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Use lowercase GHCR image name
+        run: echo "IMAGE_NAME=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
       - name: Download Docker binaries
         uses: actions/download-artifact@v4
         with:
-          pattern: komari-linux-*
+          pattern: Lite-linux-*
           path: .
           merge-multiple: true
 
@@ -216,8 +230,12 @@ jobs:
       - name: Promote Docker latest tag
         if: steps.release.outputs.is_latest == 'true'
         env:
-          TAG: ${{ needs.prepare.outputs.version }}
-        run: docker buildx imagetools create --tag "${REGISTRY}/${IMAGE_NAME}:latest" "${REGISTRY}/${IMAGE_NAME}:${TAG}"
+          SOURCE: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          source="${SOURCE%%$'\n'*}"
+          image="${source%:*}"
+          docker buildx imagetools create --tag "${image}:latest" "$source"
 
   publish-update-manifest:
     needs: [prepare, build-and-attach-binaries]
@@ -228,7 +246,7 @@ jobs:
       - name: Download release binaries
         uses: actions/download-artifact@v4
         with:
-          pattern: komari-*-*
+          pattern: Lite-*-*
           path: release-assets
           merge-multiple: true
 
@@ -240,15 +258,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sha256sum komari-* | sort -k2 > SHA256SUMS
+          sha256sum Lite-* | sort -k2 > SHA256SUMS
           node <<'NODE'
           const crypto = require("crypto");
           const fs = require("fs");
           const files = fs.readdirSync(".")
-            .filter((name) => /^komari-(windows|linux)-[A-Za-z0-9]+(?:\.exe)?$/.test(name))
+            .filter((name) => /^Lite-(windows|linux)-[A-Za-z0-9]+(?:\.exe)?$/.test(name))
             .sort();
           const assets = files.map((name) => {
-            const match = name.match(/^komari-(windows|linux)-([A-Za-z0-9]+)(?:\.exe)?$/);
+            const match = name.match(/^Lite-(windows|linux)-([A-Za-z0-9]+)(?:\.exe)?$/);
             const content = fs.readFileSync(name);
             return {
               name,
@@ -258,7 +276,7 @@ jobs:
               sha256: crypto.createHash("sha256").update(content).digest("hex"),
             };
           });
-          fs.writeFileSync("komari-update.json", JSON.stringify({
+          fs.writeFileSync("lite-update.json", JSON.stringify({
             schema: 1,
             version: process.env.VERSION,
             version_hash: process.env.VERSION_HASH,
@@ -272,7 +290,7 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
         working-directory: release-assets
         shell: bash
-        run: gh release upload "$VERSION" SHA256SUMS komari-update.json --repo "$GITHUB_REPOSITORY" --clobber
+        run: gh release upload "$VERSION" SHA256SUMS lite-update.json --repo "$GITHUB_REPOSITORY" --clobber
 
   update-release-notes:
     needs: [prepare, build-and-push-docker, publish-update-manifest]

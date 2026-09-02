@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/komari-monitor/komari/database/auditlog"
-	"github.com/komari-monitor/komari/database/clients"
-	"github.com/komari-monitor/komari/database/models"
-	messageevent "github.com/komari-monitor/komari/database/models/messageEvent"
-	"github.com/komari-monitor/komari/pkg/timeutil"
-	"github.com/komari-monitor/komari/utils/messageSender"
-	agent_runtime "github.com/komari-monitor/komari/web/agent"
+	"github.com/nuomiiiii/lite/database/auditlog"
+	"github.com/nuomiiiii/lite/database/clients"
+	"github.com/nuomiiiii/lite/database/models"
+	messageevent "github.com/nuomiiiii/lite/database/models/messageEvent"
+	"github.com/nuomiiiii/lite/pkg/timeutil"
+	"github.com/nuomiiiii/lite/utils/messageSender"
+	agent_runtime "github.com/nuomiiiii/lite/web/agent"
 )
 
 func CheckAndAutoRenewal(client models.Client) {
@@ -24,8 +24,7 @@ func CheckAndAutoRenewal(client models.Client) {
 	if !client.AutoRenewal {
 		return
 	}
-	// 不在线则不续费
-	if _, ok := agent_runtime.GetConnectedClients()[client.UUID]; !ok {
+	if !agent_runtime.IsPresent(client.UUID) {
 		return
 	}
 	if client.ExpiredAt == nil {
@@ -40,15 +39,14 @@ func CheckAndAutoRenewal(client models.Client) {
 		return
 	}
 
-	// 检查是否已过期或当天过期
-	if clientExpireTime.Before(checkTime) || timeutil.SameSystemDate(clientExpireTime, checkTime) {
-		// 计算过期时间距离创建时间的总天数，判断是否为长期账单
+	// 北京时间到达到期日当天（含当天 0 点）即续，不等到第二天或早上 9 点。
+	if timeutil.BeijingDayReached(checkTime, clientExpireTime) {
 		now := checkTime
-		localNow := now.In(time.Local)
-		hundredYearsFromNow := localNow.AddDate(100, 0, 0).UTC()
+		localNow := timeutil.BeijingDay(now)
+		hundredYearsFromNow := localNow.AddDate(100, 0, 0)
 
 		// 如果过期时间超过当前时间100年，视为长期/一次性账单，不续费
-		if clientExpireTime.After(hundredYearsFromNow) {
+		if timeutil.BeijingDay(clientExpireTime).After(hundredYearsFromNow) {
 			return
 		}
 
@@ -59,8 +57,8 @@ func CheckAndAutoRenewal(client models.Client) {
 			billingCycle := client.BillingCycle
 
 			// 如果服务器的过期时间太早了，那么直接设置为从当前时间算的下一个到期时间
-			baseTime := clientExpireTime.In(time.Local)
-			if clientExpireTime.Before(localNow.AddDate(0, 0, -30).UTC()) { // 过期时间超过30天前
+			baseTime := timeutil.BeijingDay(clientExpireTime)
+			if timeutil.BeijingDay(clientExpireTime).Before(localNow.AddDate(0, 0, -30)) {
 				baseTime = localNow
 			}
 
@@ -93,29 +91,24 @@ func CheckAndAutoRenewal(client models.Client) {
 			// 更新客户端过期时间
 			updates := map[string]interface{}{
 				"uuid":       client.UUID,
-				"expired_at": newExpireTime.UTC(),
+				"expired_at": newExpireTime.In(time.UTC),
 			}
 
-			err := clients.SaveClient(updates)
+			err := clients.SaveClientWithSource(updates, "renewal")
 			if err != nil {
 				auditlog.EventLog("renewal", fmt.Sprintf("Failed to renew client %s (%s): %v", client.Name, client.UUID, err))
 				return
 			}
 
-			//renewedClients = append(renewedClients, renewedClient{
-			//	Name:          client.Name,
-			//	NewExpireTime: newExpireTime,
-			//})
-
 			auditlog.EventLog("renewal", fmt.Sprintf("Auto-renewed client: %s until %s",
-				client.Name, timeutil.FormatSystemDate(newExpireTime)))
+				client.Name, timeutil.FormatBeijingDate(newExpireTime)))
 
 			messageSender.SendEvent(models.EventMessage{
 				Event:   messageevent.Renew,
 				Clients: []models.Client{client},
 				Time:    time.Now().UTC(),
 				Emoji:   "🔄",
-				Message: fmt.Sprintf("• %s until %s\n", client.Name, timeutil.FormatSystemDate(newExpireTime)),
+				Message: fmt.Sprintf("• %s until %s\n", client.Name, timeutil.FormatBeijingDate(newExpireTime)),
 			})
 		}
 	}

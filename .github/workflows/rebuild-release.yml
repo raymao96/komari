@@ -17,9 +17,14 @@ on:
         default: main
         type: string
       frontend_ref:
-        description: komari-web branch or tag to build.
-        required: true
-        default: main
+        description: komari-web branch or tag. Leave empty to use the same x.y.z tag as this release.
+        required: false
+        default: ""
+        type: string
+      theme_ref:
+        description: Lite-theme branch or tag. Leave empty to use main.
+        required: false
+        default: ""
         type: string
 
 permissions:
@@ -47,12 +52,30 @@ jobs:
           VERSION: ${{ inputs.release_tag }}
           REQUESTED_HASH: ${{ inputs.version_hash }}
           FRONTEND_REF: ${{ inputs.frontend_ref }}
+          THEME_REF: ${{ inputs.theme_ref }}
         shell: bash
         run: |
           set -euo pipefail
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid version: $VERSION" >&2; exit 1; }
-          [ -n "$FRONTEND_REF" ] || { echo "Frontend ref cannot be empty." >&2; exit 1; }
           gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null
+
+          FRONTEND_REF="${FRONTEND_REF:-$VERSION}"
+          OWNER="${GITHUB_REPOSITORY_OWNER}"
+          WEB_REPO="${OWNER}/komari-web"
+          if git ls-remote --exit-code "https://github.com/${WEB_REPO}.git" "refs/tags/${FRONTEND_REF}" >/dev/null; then
+            echo "Using komari-web tag ${FRONTEND_REF}"
+          elif git ls-remote --exit-code "https://github.com/${WEB_REPO}.git" "refs/heads/${FRONTEND_REF}" >/dev/null; then
+            echo "Using komari-web branch ${FRONTEND_REF}"
+          else
+            echo "komari-web has no tag or branch named ${FRONTEND_REF}. Publish komari-web ${VERSION} first." >&2
+            exit 1
+          fi
+
+          WEB_VERSION="$(gh api "repos/${WEB_REPO}/contents/package.json?ref=${FRONTEND_REF}" --jq .content | python3 -c "import json,sys,base64; print(json.loads(base64.b64decode(sys.stdin.read()).decode())['version'])")"
+          if [ "$WEB_VERSION" != "$VERSION" ]; then
+            echo "komari-web ${FRONTEND_REF} is version ${WEB_VERSION}, expected ${VERSION}." >&2
+            exit 1
+          fi
 
           VERSION_HASH="$REQUESTED_HASH"
           if [ -z "$VERSION_HASH" ]; then
@@ -63,6 +86,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "version_hash=$VERSION_HASH" >> "$GITHUB_OUTPUT"
           echo "frontend_ref=$FRONTEND_REF" >> "$GITHUB_OUTPUT"
+          echo "theme_ref=${THEME_REF:-main}" >> "$GITHUB_OUTPUT"
 
       - name: Move version tag to selected source
         env:
@@ -86,9 +110,9 @@ jobs:
           BODY_FILE="$BODY_FILE" VERSION_HASH="$VERSION_HASH" node <<'NODE'
           const fs = require("fs");
           const path = process.env.BODY_FILE;
-          const marker = `<!-- komari-version-hash: ${process.env.VERSION_HASH} -->`;
+          const marker = `<!-- lite-version-hash: ${process.env.VERSION_HASH} -->`;
           const body = fs.readFileSync(path, "utf8");
-          const pattern = /<!--\s*komari-version-hash:\s*[A-Za-z0-9]{7}\s*-->/i;
+          const pattern = /<!--\s*(?:lite|komari)-version-hash:\s*[A-Za-z0-9]{7}\s*-->/i;
           fs.writeFileSync(path, pattern.test(body) ? body.replace(pattern, marker) : `${marker}\n\n${body}`);
           NODE
           gh release edit "$VERSION" --repo "$GITHUB_REPOSITORY" --title "$VERSION" --notes-file "$BODY_FILE"
@@ -99,6 +123,7 @@ jobs:
           VERSION: ${{ steps.metadata.outputs.version }}
           VERSION_HASH: ${{ steps.metadata.outputs.version_hash }}
           FRONTEND_REF: ${{ steps.metadata.outputs.frontend_ref }}
+          THEME_REF: ${{ steps.metadata.outputs.theme_ref }}
           SERVER_REF: ${{ inputs.server_ref }}
         shell: bash
         run: |
@@ -107,4 +132,5 @@ jobs:
             --ref "$SERVER_REF" \
             -f tag="$VERSION" \
             -f version_hash="$VERSION_HASH" \
-            -f web_ref="$FRONTEND_REF"
+            -f web_ref="$FRONTEND_REF" \
+            -f theme_ref="$THEME_REF"

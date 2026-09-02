@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/komari-monitor/komari/database/metricstore"
-	"github.com/komari-monitor/komari/database/models"
-	dbtasks "github.com/komari-monitor/komari/database/tasks"
-	"github.com/komari-monitor/komari/pkg/metric"
+	"github.com/nuomiiiii/lite/database/metricstore"
+	"github.com/nuomiiiii/lite/database/models"
+	dbtasks "github.com/nuomiiiii/lite/database/tasks"
+	"github.com/nuomiiiii/lite/pkg/metric"
 )
 
 type dashboardLatencyPoint struct {
@@ -65,7 +65,7 @@ func loadDashboardLatency(ctx context.Context, clientList []models.Client, now t
 		return result, fmt.Errorf("metric store is not initialized")
 	}
 	start := now.Add(-6 * time.Hour)
-	interval := store.CompatibleSeriesInterval(start, now, time.Hour)
+	interval := store.CompatibleSeriesIntervalForMetric(ctx, metricstore.MetricPingLatency, start, now, time.Hour)
 	series, err := store.DashboardSeries(ctx, metric.AggregateQuery{
 		Query: metric.Query{
 			MetricName: metricstore.MetricPingLatency,

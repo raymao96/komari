@@ -1,23 +1,24 @@
-<!-- komari-version-hash: __VERSION_HASH__ -->
+<!-- lite-version-hash: __VERSION_HASH__ -->
 
-本快照基于 Komari 2.2.3 正式版。快照可能继续调整，关键生产环境升级前请先备份数据库和配置文件。
+本快照基于 Lite 2.3.1 正式版。快照可能继续调整，关键生产环境升级前请先备份数据库和配置文件。
 
-### 新增服务器自动排序
+## 本次变更
 
-- 新服务器第一次上报并识别出国家/地区后，会排到同一分组、同一国家的最后一台后面。所有服务器都没有分组时，也会按国家排序。没有同组同国家节点时，保持创建时的位置。
-- 系统设置 → 通用增加开关，默认关闭。开启后不会修改已有服务器排序。
-- 该功能参考并使用了 https://github.com/sanrokamlan-prog 提交的 pull：https://github.com/nuomiiiii/komari/pull/1
+- 回程「疑似被墙」实验室功能改为：开启时必须选择辅助延迟任务。
+- 管理后台补齐繁体中文、日语、英语文案，覆盖回程监测、服务器概览，以及原先缺键而一直回落到简体中文的按钮、导航和分页。
+- 感谢 [raymao96](https://github.com/raymao96) 对繁体中文翻译的贡献。
+- 内置 Lite-Theme 升级到 1.0.6。
 
 ## 快照信息
 
 - 快照发布时间：__RELEASE_TIME__（北京时间）
-- Komari 构建号：`__VERSION_HASH__`
-- Komari 与 Komari Web 快照版本：`__APP_VERSION__`
+- Lite 构建号：`__VERSION_HASH__`
+- Lite 与 Lite Web 快照版本：`__APP_VERSION__`
 
 ### Docker
 
 ```bash
-docker pull ghcr.io/nuomiiiii/komari:snapshot
+docker pull __DOCKER_IMAGE__
 ```
 
 镜像包含 `linux/amd64` 和 `linux/arm64`。

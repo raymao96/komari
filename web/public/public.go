@@ -18,7 +18,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/komari-monitor/komari/pkg/config"
+	"github.com/nuomiiiii/lite/pkg/config"
+	"github.com/nuomiiiii/lite/pkg/thememanifest"
 )
 
 var legacyDefaultFaviconSHA256 = [32]byte{
@@ -36,8 +37,10 @@ const (
 	DataDir            = "./data"
 	ThemesDir          = "theme"
 	FaviconFile        = "favicon.ico"
-	DefaultTheme       = "nezha"
+	DefaultTheme       = "lite-theme"
+	LegacyPublicTheme  = "nezha"
 	LegacyDefaultTheme = "default"
+	LegacyLiteTheme    = "lite-theme-default"
 	LanguageCookieName = "language"
 
 	// 主题内部结构定义
@@ -47,13 +50,13 @@ const (
 
 const themeBundleMigrationKey = "theme_bundle_migration_v1"
 
-const currentThemeBundleMigration = 3
+const currentThemeBundleMigration = 10
 
-const adminApplicationTitle = "Komari Lite Monitor"
+const adminApplicationTitle = "Lite"
 
-const themeChangeReloadScript = `<script>(()=>{window.addEventListener("storage",(event)=>{if(event.key==="komari-active-theme-changed"){window.location.reload();}});})();</script>`
+const themeChangeReloadScript = `<script>(()=>{window.addEventListener("storage",(event)=>{if(event.key==="lite-active-theme-changed"||event.key==="komari-active-theme-changed"){window.location.reload();}});})();</script>`
 
-const documentTitleSyncMarker = "data-komari-title-sync"
+const documentTitleSyncMarker = "data-lite-title-sync"
 
 type webAppManifest struct {
 	ID              string               `json:"id"`
@@ -81,8 +84,11 @@ var (
 	appleApplicationTitlePattern = regexp.MustCompile(`(?is)<meta\s+[^>]*name\s*=\s*["']apple-mobile-web-app-title["'][^>]*>`)
 	applicationIconPattern       = regexp.MustCompile(`(?is)<link\s+[^>]*rel\s*=\s*["'](?:shortcut\s+)?icon["'][^>]*>`)
 	appleTouchIconPattern        = regexp.MustCompile(`(?is)<link\s+[^>]*rel\s*=\s*["']apple-touch-icon["'][^>]*>`)
+	viewportMetaPattern          = regexp.MustCompile(`(?is)<meta\s+[^>]*name\s*=\s*["']viewport["'][^>]*>`)
+	appleStatusBarPattern        = regexp.MustCompile(`(?is)<meta\s+[^>]*name\s*=\s*["']apple-mobile-web-app-status-bar-style["'][^>]*>`)
 	headClosePattern             = regexp.MustCompile(`(?i)</head\s*>`)
 	bodyClosePattern             = regexp.MustCompile(`(?i)</body\s*>`)
+	themeVersionPattern          = regexp.MustCompile(`^(\d+)(?:\.(\d+))?(?:\.(\d+))?`)
 )
 
 func injectThemeChangeReload(html string) string {
@@ -110,7 +116,7 @@ func injectCustomHTML(htmlStr, customHead, customBody string) string {
 func renderDocumentTitle(htmlStr, title string) string {
 	title = strings.TrimSpace(title)
 	if title == "" {
-		title = "Komari Lite"
+		title = "Lite"
 	}
 
 	titleTag := "<title>" + html.EscapeString(title) + "</title>"
@@ -133,7 +139,7 @@ func renderPublicDocumentTitle(htmlStr, title string) string {
 
 	title = strings.TrimSpace(title)
 	if title == "" {
-		title = "Komari Lite"
+		title = "Lite"
 	}
 	encodedTitle, _ := json.Marshal(title)
 	script := `<script ` + documentTitleSyncMarker + `>(()=>{const expectedTitle=` + string(encodedTitle) + `;const syncTitle=()=>{if(document.title!==expectedTitle){document.title=expectedTitle;}};syncTitle();if(document.head){new MutationObserver(syncTitle).observe(document.head,{childList:true,subtree:true,characterData:true});}})();</script>`
@@ -143,12 +149,33 @@ func renderPublicDocumentTitle(htmlStr, title string) string {
 	return htmlStr + script
 }
 
+const (
+	mobileViewportTag = `<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />`
+	appleStatusBarTag = `<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />`
+)
+
+func replaceOrInsertHeadTag(htmlStr, tag string, pattern *regexp.Regexp) string {
+	if pattern.MatchString(htmlStr) {
+		return pattern.ReplaceAllString(htmlStr, tag)
+	}
+	if location := headClosePattern.FindStringIndex(htmlStr); location != nil {
+		return htmlStr[:location[0]] + tag + htmlStr[location[0]:]
+	}
+	return tag + htmlStr
+}
+
+func renderMobileChromeMeta(htmlStr string) string {
+	htmlStr = replaceOrInsertHeadTag(htmlStr, mobileViewportTag, viewportMetaPattern)
+	return replaceOrInsertHeadTag(htmlStr, appleStatusBarTag, appleStatusBarPattern)
+}
+
 func renderApplicationIdentityWithTitle(htmlStr, title string, synchronizeTitle bool) string {
 	title = strings.TrimSpace(title)
 	if title == "" {
-		title = "Komari Lite"
+		title = "Lite"
 	}
 
+	htmlStr = renderMobileChromeMeta(htmlStr)
 	if synchronizeTitle {
 		htmlStr = renderPublicDocumentTitle(htmlStr, title)
 	} else {
@@ -184,11 +211,11 @@ func renderSystemApplicationIdentity(htmlStr, title string) string {
 func renderWebAppManifest(siteName, description string) webAppManifest {
 	siteName = strings.TrimSpace(siteName)
 	if siteName == "" {
-		siteName = "Komari Lite"
+		siteName = "Lite"
 	}
 	description = strings.TrimSpace(description)
 	if description == "" {
-		description = "A simple server monitor tool."
+		description = config.DefaultSiteDescription
 	}
 
 	return webAppManifest{
@@ -209,6 +236,16 @@ func renderWebAppManifest(siteName, description string) webAppManifest {
 			Purpose: "any",
 		}},
 	}
+}
+
+func injectSiteDescription(html, description string) string {
+	for _, placeholder := range []string{
+		config.DefaultSiteDescription,
+		"A simple server monitor tool.",
+	} {
+		html = strings.ReplaceAll(html, placeholder, description)
+	}
+	return html
 }
 
 func init() {
@@ -358,13 +395,11 @@ func IsLocalThemeUsable(themeID string) bool {
 		return false
 	}
 	base := filepath.Join(DataDir, ThemesDir, themeID)
-	for _, relativePath := range []string{"komari-theme.json", filepath.Join(DistDir, IndexFile)} {
-		info, err := os.Stat(filepath.Join(base, relativePath))
-		if err != nil || info.IsDir() {
-			return false
-		}
+	if _, ok := thememanifest.FindInDir(base); !ok {
+		return false
 	}
-	return true
+	info, err := os.Stat(filepath.Join(base, DistDir, IndexFile))
+	return err == nil && !info.IsDir()
 }
 
 func installEmbeddedTheme(root, themeID string) error {
@@ -424,6 +459,90 @@ func installEmbeddedThemeWithReplace(root, themeID string, replace bool) error {
 	return nil
 }
 
+func themeManifestVersion(content []byte) string {
+	var meta struct {
+		Version string `json:"version"`
+	}
+	if json.Unmarshal(content, &meta) != nil {
+		return ""
+	}
+	return strings.TrimSpace(meta.Version)
+}
+
+func parseThemeVersion(value string) ([3]int, bool) {
+	value = strings.TrimSpace(value)
+	if value != "" && (value[0] == 'v' || value[0] == 'V') {
+		value = value[1:]
+	}
+	match := themeVersionPattern.FindStringSubmatch(value)
+	if match == nil {
+		return [3]int{}, false
+	}
+	part := func(index int) int {
+		if index >= len(match) || match[index] == "" {
+			return 0
+		}
+		n := 0
+		fmt.Sscanf(match[index], "%d", &n)
+		return n
+	}
+	return [3]int{part(1), part(2), part(3)}, true
+}
+
+func themeVersionNewer(candidate, installed string) bool {
+	next, nextOK := parseThemeVersion(candidate)
+	current, currentOK := parseThemeVersion(installed)
+	if !nextOK || !currentOK {
+		return candidate != installed
+	}
+	for i := range next {
+		if next[i] != current[i] {
+			return next[i] > current[i]
+		}
+	}
+	return false
+}
+
+func localThemeVersion(themeID string) string {
+	manifestPath, ok := thememanifest.FindInDir(filepath.Join(DataDir, ThemesDir, themeID))
+	if !ok {
+		return ""
+	}
+	content, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return ""
+	}
+	return themeManifestVersion(content)
+}
+
+func embeddedThemeVersion(root string) string {
+	for _, name := range thememanifest.Names() {
+		content, err := fs.ReadFile(PublicFS, path.Join(root, name))
+		if err != nil {
+			continue
+		}
+		if version := themeManifestVersion(content); version != "" {
+			return version
+		}
+	}
+	return ""
+}
+
+func refreshBundledLiteThemeIfNewer() error {
+	if !IsLocalThemeUsable(DefaultTheme) {
+		return nil
+	}
+	embedded := embeddedThemeVersion("bundledThemes/Lite-theme")
+	installed := localThemeVersion(DefaultTheme)
+	if embedded == "" || !themeVersionNewer(embedded, installed) {
+		return nil
+	}
+	if err := installEmbeddedThemeWithReplace("bundledThemes/Lite-theme", DefaultTheme, true); err != nil {
+		return fmt.Errorf("refresh bundled Lite-Theme: %w", err)
+	}
+	return nil
+}
+
 func localThemeFallback() string {
 	if IsLocalThemeUsable(DefaultTheme) {
 		return DefaultTheme
@@ -454,28 +573,36 @@ func EnsureBundledThemes() error {
 	if currentTheme == "" {
 		currentTheme = DefaultTheme
 	}
-	if currentTheme == LegacyDefaultTheme {
+	if currentTheme == LegacyDefaultTheme || currentTheme == LegacyLiteTheme {
 		currentTheme = DefaultTheme
 	}
 	if migrated < 1 {
-		if err := installEmbeddedTheme("bundledThemes/nezha", DefaultTheme); err != nil {
-			return fmt.Errorf("install bundled Nezha theme: %w", err)
+		if err := installEmbeddedTheme("bundledThemes/Lite-theme", DefaultTheme); err != nil {
+			return fmt.Errorf("install bundled Lite-Theme: %w", err)
+		}
+		currentTheme = DefaultTheme
+	}
+	// Migrate the former built-in public themes to Lite-Theme once. A user who
+	// selected an unrelated custom theme keeps that choice.
+	if migrated >= 1 && migrated < currentThemeBundleMigration {
+		switchToLiteDefault := currentTheme == LegacyPublicTheme || currentTheme == LegacyDefaultTheme || currentTheme == LegacyLiteTheme || currentTheme == DefaultTheme
+		if switchToLiteDefault || IsLocalThemeUsable(DefaultTheme) {
+			if err := installEmbeddedThemeWithReplace("bundledThemes/Lite-theme", DefaultTheme, true); err != nil {
+				return fmt.Errorf("install bundled Lite-Theme: %w", err)
+			}
+		}
+		if currentTheme == LegacyPublicTheme || currentTheme == LegacyDefaultTheme || currentTheme == LegacyLiteTheme {
+			currentTheme = DefaultTheme
 		}
 	}
-	// The first decoupled snapshot installed Nezha as a managed theme but did
-	// not refresh that copy on later Komari upgrades. Replace an existing copy
-	// once so deployments do not keep an old router/API bundle indefinitely.
-	// A user who deleted Nezha and selected another theme keeps that choice.
-	if migrated >= 1 && migrated < currentThemeBundleMigration && IsLocalThemeUsable(DefaultTheme) {
-		if err := installEmbeddedThemeWithReplace("bundledThemes/nezha", DefaultTheme, true); err != nil {
-			return fmt.Errorf("refresh bundled Nezha theme: %w", err)
-		}
+	if err := refreshBundledLiteThemeIfNewer(); err != nil {
+		return err
 	}
 	if !IsLocalThemeUsable(currentTheme) {
 		currentTheme = localThemeFallback()
 		if currentTheme == "" {
-			if err := installEmbeddedTheme("bundledThemes/nezha", DefaultTheme); err != nil {
-				return fmt.Errorf("restore bundled Nezha theme: %w", err)
+			if err := installEmbeddedTheme("bundledThemes/Lite-theme", DefaultTheme); err != nil {
+				return fmt.Errorf("restore bundled Lite-Theme: %w", err)
 			}
 			currentTheme = DefaultTheme
 		}
@@ -490,10 +617,10 @@ func EnsureBundledThemes() error {
 func Static(r *gin.RouterGroup, noRoute func(handlers ...gin.HandlerFunc)) {
 	getConfig := func() map[string]any {
 		cfg, _ := config.GetMany(map[string]any{
-			config.DescriptionKey: "A simple server monitor tool.",
+			config.DescriptionKey: config.DefaultSiteDescription,
 			config.CustomHeadKey:  "",
 			config.CustomBodyKey:  "",
-			config.SitenameKey:    "Komari Lite",
+			config.SitenameKey:    "Lite",
 			config.ThemeKey:       DefaultTheme,
 		})
 		return cfg
@@ -568,9 +695,8 @@ func Static(r *gin.RouterGroup, noRoute func(handlers ...gin.HandlerFunc)) {
 			cfg[config.CustomBodyKey].(string),
 		)
 
-		rendered := strings.ReplaceAll(
+		rendered := injectSiteDescription(
 			htmlStr,
-			"A simple server monitor tool.",
 			cfg[config.DescriptionKey].(string),
 		)
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(injectThemeChangeReload(rendered)))
@@ -578,13 +704,9 @@ func Static(r *gin.RouterGroup, noRoute func(handlers ...gin.HandlerFunc)) {
 
 	// ================= 路由定义 =================
 
-	// 1. Favicon 优先策略
 	r.GET("/favicon.ico", func(c *gin.Context) {
-		c.Header("Cache-Control", "no-store, no-cache, must-revalidate")
-		c.Header("Pragma", "no-cache")
-		c.Header("Expires", "0")
+		setNoStoreHeaders(c)
 
-		// 优先：./data/favicon.ico
 		localFavicon := filepath.Join(DataDir, FaviconFile)
 		if _, err := os.Stat(localFavicon); err == nil {
 			c.Header("Content-Type", contentTypeForPath(localFavicon))
@@ -592,8 +714,6 @@ func Static(r *gin.RouterGroup, noRoute func(handlers ...gin.HandlerFunc)) {
 			return
 		}
 
-		// 其次：当前主题的 dist/favicon.ico 或 theme_root/favicon.ico ?
-		// 通常构建后的资源在 dist 中，这里假设优先找 dist 内的，如果你的 favicon 在根目录，去掉 DistDir 拼接即可
 		cfg := getConfig()
 		themeFaviconPath := path.Join(DistDir, FaviconFile)
 		content, mimeType, exists := getPublicFileContent(cfg[config.ThemeKey].(string), themeFaviconPath)
@@ -602,8 +722,6 @@ func Static(r *gin.RouterGroup, noRoute func(handlers ...gin.HandlerFunc)) {
 			return
 		}
 
-		// Fresh installations and themes without their own favicon use the
-		// system UI icon instead of returning a broken image.
 		content, mimeType, exists = embeddedFileContent("systemUI", themeFaviconPath)
 		if exists {
 			c.Data(http.StatusOK, mimeType, content)
@@ -632,7 +750,7 @@ func Static(r *gin.RouterGroup, noRoute func(handlers ...gin.HandlerFunc)) {
 	})
 
 	// 2. Static theme files are served only from installed, manageable themes.
-	// 允许访问 /themes/MyTheme/theme.json 和 /themes/MyTheme/dist/assets/a.js
+	// 允许访问 /themes/MyTheme/Lite-theme.json 和 /themes/MyTheme/dist/assets/a.js
 	r.GET("/themes/:id/*path", func(c *gin.Context) {
 		themeID := c.Param("id")
 		// c.Param("path") 包含了开头的 /，getFileContent 会处理

@@ -4,17 +4,27 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/komari-monitor/komari/database/clients"
-	"github.com/komari-monitor/komari/database/models"
-	messageevent "github.com/komari-monitor/komari/database/models/messageEvent"
-	"github.com/komari-monitor/komari/pkg/config"
-	"github.com/komari-monitor/komari/pkg/timeutil"
-	"github.com/komari-monitor/komari/utils/messageSender"
-	"github.com/komari-monitor/komari/utils/renewal"
+	"github.com/nuomiiiii/lite/database/clients"
+	"github.com/nuomiiiii/lite/database/models"
+	messageevent "github.com/nuomiiiii/lite/database/models/messageEvent"
+	"github.com/nuomiiiii/lite/pkg/config"
+	"github.com/nuomiiiii/lite/pkg/timeutil"
+	"github.com/nuomiiiii/lite/utils/messageSender"
+	"github.com/nuomiiiii/lite/utils/renewal"
 )
 
 func CheckExpireScheduledWork() {
 	CheckExpire()
+}
+
+func CheckAutoRenewalScheduledWork() {
+	clients_all, err := clients.GetAllClientBasicInfo()
+	if err != nil {
+		return
+	}
+	for _, client := range clients_all {
+		renewal.CheckAndAutoRenewal(client)
+	}
 }
 
 func CheckExpire() {

@@ -6,7 +6,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
+	"syscall"
 	"testing"
+
+	"github.com/nuomiiiii/lite/cmd/flags"
 )
 
 func createRestoreSQLite(t *testing.T, path, value string) {
@@ -25,25 +29,42 @@ func createRestoreSQLite(t *testing.T, path, value string) {
 }
 
 func writeRestoreArchive(t *testing.T, archivePath, databasePath string) {
+	writeNamedRestoreArchive(t, archivePath, "lite.db", databasePath)
+}
+
+func writeNamedRestoreArchive(t *testing.T, archivePath, zipName, databasePath string) {
+	writeRestoreArchiveFiles(t, archivePath, map[string]string{zipName: databasePath})
+}
+
+func writeKomariFullRestoreArchive(t *testing.T, archivePath, databasePath, metricsPath string) {
+	writeRestoreArchiveFiles(t, archivePath, map[string]string{
+		"komari.db":  databasePath,
+		"metrics.db": metricsPath,
+	})
+}
+
+func writeRestoreArchiveFiles(t *testing.T, archivePath string, files map[string]string) {
 	t.Helper()
 	archive, err := os.Create(archivePath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	writer := zip.NewWriter(archive)
-	databaseEntry, err := writer.Create("komari.db")
-	if err != nil {
-		t.Fatal(err)
+	for zipName, filePath := range files {
+		entry, err := writer.Create(zipName)
+		if err != nil {
+			t.Fatal(err)
+		}
+		file, err := os.Open(filePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.Copy(entry, file); err != nil {
+			file.Close()
+			t.Fatal(err)
+		}
+		file.Close()
 	}
-	database, err := os.Open(databasePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := io.Copy(databaseEntry, database); err != nil {
-		database.Close()
-		t.Fatal(err)
-	}
-	database.Close()
 	marker, err := writer.Create("komari-backup-markup")
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +86,7 @@ func TestRestoreStagedBackupReplacesDataOnlyAfterValidation(t *testing.T) {
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	createRestoreSQLite(t, filepath.Join(dataDir, "komari.db"), "old")
+	createRestoreSQLite(t, filepath.Join(dataDir, "lite.db"), "old")
 	newDatabase := filepath.Join(root, "new.db")
 	createRestoreSQLite(t, newDatabase, "new")
 	writeRestoreArchive(t, filepath.Join(dataDir, "backup.zip"), newDatabase)
@@ -80,7 +101,7 @@ func TestRestoreStagedBackupReplacesDataOnlyAfterValidation(t *testing.T) {
 	if err := restore.Commit(); err != nil {
 		t.Fatalf("commit restore: %v", err)
 	}
-	db, err := sql.Open("sqlite3", filepath.Join(dataDir, "komari.db"))
+	db, err := sql.Open("sqlite3", filepath.Join(dataDir, "lite.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +147,7 @@ func TestRestoreStagedBackupRollsBackAfterStartupFailure(t *testing.T) {
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	createRestoreSQLite(t, filepath.Join(dataDir, "komari.db"), "old")
+	createRestoreSQLite(t, filepath.Join(dataDir, "lite.db"), "old")
 	newDatabase := filepath.Join(root, "new.db")
 	createRestoreSQLite(t, newDatabase, "new")
 	writeRestoreArchive(t, filepath.Join(dataDir, "backup.zip"), newDatabase)
@@ -138,7 +159,7 @@ func TestRestoreStagedBackupRollsBackAfterStartupFailure(t *testing.T) {
 	if err := restore.Rollback(); err != nil {
 		t.Fatalf("rollback staged restore: %v", err)
 	}
-	db, err := sql.Open("sqlite3", filepath.Join(dataDir, "komari.db"))
+	db, err := sql.Open("sqlite3", filepath.Join(dataDir, "lite.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +186,7 @@ func TestCloseRollsBackPendingRestoreWithoutDatabaseHandle(t *testing.T) {
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	createRestoreSQLite(t, filepath.Join(dataDir, "komari.db"), "old")
+	createRestoreSQLite(t, filepath.Join(dataDir, "lite.db"), "old")
 	newDatabase := filepath.Join(root, "new.db")
 	createRestoreSQLite(t, newDatabase, "new")
 	writeRestoreArchive(t, filepath.Join(dataDir, "backup.zip"), newDatabase)
@@ -183,7 +204,7 @@ func TestCloseRollsBackPendingRestoreWithoutDatabaseHandle(t *testing.T) {
 		t.Fatalf("close without database handle: %v", err)
 	}
 
-	db, err := sql.Open("sqlite3", filepath.Join(dataDir, "komari.db"))
+	db, err := sql.Open("sqlite3", filepath.Join(dataDir, "lite.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +224,7 @@ func TestInterruptedRestoreRollsBackBeforeCommit(t *testing.T) {
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	createRestoreSQLite(t, filepath.Join(dataDir, "komari.db"), "old")
+	createRestoreSQLite(t, filepath.Join(dataDir, "lite.db"), "old")
 	newDatabase := filepath.Join(root, "new.db")
 	createRestoreSQLite(t, newDatabase, "new")
 	writeRestoreArchive(t, filepath.Join(dataDir, "backup.zip"), newDatabase)
@@ -215,7 +236,7 @@ func TestInterruptedRestoreRollsBackBeforeCommit(t *testing.T) {
 		t.Fatalf("recover interrupted restore: %v", err)
 	}
 
-	db, err := sql.Open("sqlite3", filepath.Join(dataDir, "komari.db"))
+	db, err := sql.Open("sqlite3", filepath.Join(dataDir, "lite.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +260,7 @@ func TestInterruptedRestoreKeepsDataAfterCommitMarker(t *testing.T) {
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	createRestoreSQLite(t, filepath.Join(dataDir, "komari.db"), "old")
+	createRestoreSQLite(t, filepath.Join(dataDir, "lite.db"), "old")
 	newDatabase := filepath.Join(root, "new.db")
 	createRestoreSQLite(t, newDatabase, "new")
 	writeRestoreArchive(t, filepath.Join(dataDir, "backup.zip"), newDatabase)
@@ -255,7 +276,7 @@ func TestInterruptedRestoreKeepsDataAfterCommitMarker(t *testing.T) {
 		t.Fatalf("finish interrupted commit: %v", err)
 	}
 
-	db, err := sql.Open("sqlite3", filepath.Join(dataDir, "komari.db"))
+	db, err := sql.Open("sqlite3", filepath.Join(dataDir, "lite.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,5 +290,133 @@ func TestInterruptedRestoreKeepsDataAfterCommitMarker(t *testing.T) {
 	}
 	if _, err := os.Stat(restore.previousDir); !os.IsNotExist(err) {
 		t.Fatalf("previous directory still exists: %v", err)
+	}
+}
+
+func TestRestoreStagedBackupAdoptsKomariDatabase(t *testing.T) {
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	createRestoreSQLite(t, filepath.Join(dataDir, "lite.db"), "old")
+	newDatabase := filepath.Join(root, "new.db")
+	createRestoreSQLite(t, newDatabase, "from-komari")
+	writeNamedRestoreArchive(t, filepath.Join(dataDir, "backup.zip"), "komari.db", newDatabase)
+
+	previous := flags.DatabaseFile
+	t.Cleanup(func() { flags.DatabaseFile = previous })
+	flags.DatabaseFile = filepath.Join(dataDir, "lite.db")
+
+	restore, err := restoreStagedBackup(dataDir)
+	if err != nil {
+		t.Fatalf("restore komari.db backup: %v", err)
+	}
+	if err := restore.Commit(); err != nil {
+		t.Fatalf("commit restore: %v", err)
+	}
+	db, err := sql.Open("sqlite3", filepath.Join(dataDir, "lite.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var value string
+	if err := db.QueryRow(`SELECT value FROM state`).Scan(&value); err != nil {
+		t.Fatal(err)
+	}
+	if value != "from-komari" {
+		t.Fatalf("restored value = %q, want from-komari", value)
+	}
+}
+
+func TestRestoreStagedBackupAdoptsKomariFullBackupWithMetrics(t *testing.T) {
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFakeSQLite(t, filepath.Join(dataDir, "lite.db"), "old")
+	writeFakeSQLite(t, filepath.Join(dataDir, "metrics.db"), "old-metrics")
+	mainDB := filepath.Join(root, "komari.db")
+	metricsDB := filepath.Join(root, "metrics.db")
+	writeFakeSQLite(t, mainDB, "from-komari")
+	writeFakeSQLite(t, metricsDB, "from-komari-metrics")
+	writeKomariFullRestoreArchive(t, filepath.Join(dataDir, "backup.zip"), mainDB, metricsDB)
+
+	previous := flags.DatabaseFile
+	t.Cleanup(func() { flags.DatabaseFile = previous })
+	flags.DatabaseFile = filepath.Join(dataDir, "lite.db")
+
+	restore, err := restoreStagedBackup(dataDir)
+	if err != nil {
+		t.Fatalf("restore komari 1.4 full backup: %v", err)
+	}
+	if err := restore.Commit(); err != nil {
+		t.Fatalf("commit restore: %v", err)
+	}
+	for name, want := range map[string]string{
+		"lite.db":    "from-komari",
+		"metrics.db": "from-komari-metrics",
+	} {
+		got, err := os.ReadFile(filepath.Join(dataDir, name))
+		if err != nil {
+			t.Fatalf("read restored %s: %v", name, err)
+		}
+		if !strings.Contains(string(got), want) {
+			t.Fatalf("restored %s = %q, want payload %q", name, got, want)
+		}
+	}
+}
+
+func TestRestoreStagedBackupFallsBackWhenDataDirCannotBeRenamed(t *testing.T) {
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFakeSQLite(t, filepath.Join(dataDir, "lite.db"), "old")
+	if err := os.WriteFile(filepath.Join(dataDir, "keep.txt"), []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	newDatabase := filepath.Join(root, "new.db")
+	writeFakeSQLite(t, newDatabase, "new")
+	writeRestoreArchive(t, filepath.Join(dataDir, "backup.zip"), newDatabase)
+
+	previous := renameDirectory
+	t.Cleanup(func() { renameDirectory = previous })
+	renameDirectory = func(oldpath, newpath string) error {
+		return &os.LinkError{Op: "rename", Old: oldpath, New: newpath, Err: syscall.EBUSY}
+	}
+
+	restore, err := restoreStagedBackup(dataDir)
+	if err != nil {
+		t.Fatalf("restore backup on busy data dir: %v", err)
+	}
+	if restore == nil {
+		t.Fatal("restore transaction was not created")
+	}
+	if _, err := os.Stat(dataDir); err != nil {
+		t.Fatalf("data directory must remain in place: %v", err)
+	}
+	if err := restore.Commit(); err != nil {
+		t.Fatalf("commit restore: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(dataDir, "lite.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), "new") {
+		t.Fatalf("restored lite.db = %q, want payload new", content)
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, "keep.txt")); !os.IsNotExist(err) {
+		t.Fatal("previous files should have been moved aside")
+	}
+}
+
+func writeFakeSQLite(t *testing.T, path, payload string) {
+	t.Helper()
+	data := append([]byte("SQLite format 3\x00"), payload...)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
