@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	appconfig "github.com/nuomiiiii/lite/pkg/config"
+	appconfig "github.com/raymao96/komari/pkg/config"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )

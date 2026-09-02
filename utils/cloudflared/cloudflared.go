@@ -15,8 +15,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nuomiiiii/lite/pkg/config"
-	"github.com/nuomiiiii/lite/utils/secureconfig"
+	"github.com/raymao96/komari/pkg/config"
+	"github.com/raymao96/komari/utils/secureconfig"
 )
 
 type RuntimeStatus struct {

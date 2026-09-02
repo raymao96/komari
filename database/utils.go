@@ -8,13 +8,13 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nuomiiiii/lite/database/dbcore"
-	"github.com/nuomiiiii/lite/database/managedconfig"
-	"github.com/nuomiiiii/lite/database/metricstore"
-	"github.com/nuomiiiii/lite/database/models"
-	"github.com/nuomiiiii/lite/pkg/config"
-	"github.com/nuomiiiii/lite/pkg/thememanifest"
-	logger "github.com/nuomiiiii/lite/utils/log"
+	"github.com/raymao96/komari/database/dbcore"
+	"github.com/raymao96/komari/database/managedconfig"
+	"github.com/raymao96/komari/database/metricstore"
+	"github.com/raymao96/komari/database/models"
+	"github.com/raymao96/komari/pkg/config"
+	"github.com/raymao96/komari/pkg/thememanifest"
+	logger "github.com/raymao96/komari/utils/log"
 	"gorm.io/gorm"
 )
 

@@ -1,16 +1,16 @@
 package terminal
 
 import (
-	logger "github.com/nuomiiiii/lite/utils/log"
+	logger "github.com/raymao96/komari/utils/log"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nuomiiiii/lite/database/clients"
-	"github.com/nuomiiiii/lite/database/metricstore"
-	"github.com/nuomiiiii/lite/utils"
-	agent_runtime "github.com/nuomiiiii/lite/web/agent"
-	"github.com/nuomiiiii/lite/web/api"
+	"github.com/raymao96/komari/database/clients"
+	"github.com/raymao96/komari/database/metricstore"
+	"github.com/raymao96/komari/utils"
+	agent_runtime "github.com/raymao96/komari/web/agent"
+	"github.com/raymao96/komari/web/api"
 )
 
 func RequestTerminal(c *gin.Context) {

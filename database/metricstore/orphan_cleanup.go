@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/nuomiiiii/lite/pkg/metric"
+	"github.com/raymao96/komari/pkg/metric"
 )
 
 type OrphanCleanupResult struct {

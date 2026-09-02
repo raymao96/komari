@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/models"
+	"github.com/raymao96/komari/database/models"
 )
 
 func publicMainlandHop(ttl, asn int, ip string) mainlandPathHop {

@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nuomiiiii/lite/database/metricstore"
-	"github.com/nuomiiiii/lite/database/models"
+	"github.com/raymao96/komari/database/metricstore"
+	"github.com/raymao96/komari/database/models"
 )
 
 func pingTasksByStringID(taskList []models.PingTask) map[string]models.PingTask {

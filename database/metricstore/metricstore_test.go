@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/models"
-	"github.com/nuomiiiii/lite/pkg/metric"
-	v1 "github.com/nuomiiiii/lite/protocol/v1"
+	"github.com/raymao96/komari/database/models"
+	"github.com/raymao96/komari/pkg/metric"
+	v1 "github.com/raymao96/komari/protocol/v1"
 )
 
 func TestDefaultRollupPolicy(t *testing.T) {

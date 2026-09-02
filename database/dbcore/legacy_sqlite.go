@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nuomiiiii/lite/cmd/flags"
-	logger "github.com/nuomiiiii/lite/utils/log"
+	"github.com/raymao96/komari/cmd/flags"
+	logger "github.com/raymao96/komari/utils/log"
 )
 
 const (

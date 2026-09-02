@@ -4,12 +4,12 @@ import (
 	"context"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/dbcore"
-	"github.com/nuomiiiii/lite/database/models"
-	"github.com/nuomiiiii/lite/database/notification"
-	"github.com/nuomiiiii/lite/database/notificationdefaults"
-	"github.com/nuomiiiii/lite/pkg/rpc"
-	"github.com/nuomiiiii/lite/utils/notifier"
+	"github.com/raymao96/komari/database/dbcore"
+	"github.com/raymao96/komari/database/models"
+	"github.com/raymao96/komari/database/notification"
+	"github.com/raymao96/komari/database/notificationdefaults"
+	"github.com/raymao96/komari/pkg/rpc"
+	"github.com/raymao96/komari/utils/notifier"
 	"gorm.io/gorm/clause"
 )
 

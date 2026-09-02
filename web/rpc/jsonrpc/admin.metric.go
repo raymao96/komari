@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/auditlog"
-	"github.com/nuomiiiii/lite/database/metricstore"
-	"github.com/nuomiiiii/lite/pkg/metric"
-	"github.com/nuomiiiii/lite/pkg/rpc"
+	"github.com/raymao96/komari/database/auditlog"
+	"github.com/raymao96/komari/database/metricstore"
+	"github.com/raymao96/komari/pkg/metric"
+	"github.com/raymao96/komari/pkg/rpc"
 )
 
 // admin.metric.go

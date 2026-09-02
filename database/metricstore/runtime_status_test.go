@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nuomiiiii/lite/pkg/metric"
+	"github.com/raymao96/komari/pkg/metric"
 )
 
 func TestRuntimeStatusTracksCheckpointFailuresAndRecovery(t *testing.T) {

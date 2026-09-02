@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nuomiiiii/lite/cmd/flags"
-	"github.com/nuomiiiii/lite/pkg/config"
+	"github.com/raymao96/komari/cmd/flags"
+	"github.com/raymao96/komari/pkg/config"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )

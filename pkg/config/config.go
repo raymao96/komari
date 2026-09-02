@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	logger "github.com/nuomiiiii/lite/utils/log"
+	logger "github.com/raymao96/komari/utils/log"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

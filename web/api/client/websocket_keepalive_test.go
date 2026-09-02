@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/nuomiiiii/lite/web/connection"
+	"github.com/raymao96/komari/web/connection"
 )
 
 func TestProductionIdleTimeoutIgnoresReportAndProbeSchedules(t *testing.T) {

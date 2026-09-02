@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/metricstore"
-	"github.com/nuomiiiii/lite/database/models"
-	dbtasks "github.com/nuomiiiii/lite/database/tasks"
-	"github.com/nuomiiiii/lite/pkg/metric"
-	agent_runtime "github.com/nuomiiiii/lite/web/agent"
-	publicweb "github.com/nuomiiiii/lite/web/public"
+	"github.com/raymao96/komari/database/metricstore"
+	"github.com/raymao96/komari/database/models"
+	dbtasks "github.com/raymao96/komari/database/tasks"
+	"github.com/raymao96/komari/pkg/metric"
+	agent_runtime "github.com/raymao96/komari/web/agent"
+	publicweb "github.com/raymao96/komari/web/public"
 )
 
 const dashboardPacketLossWindow = 15 * time.Minute

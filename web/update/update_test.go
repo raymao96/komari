@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	appconfig "github.com/nuomiiiii/lite/pkg/config"
-	"github.com/nuomiiiii/lite/pkg/migrations"
-	"github.com/nuomiiiii/lite/web/api"
+	appconfig "github.com/raymao96/komari/pkg/config"
+	"github.com/raymao96/komari/pkg/migrations"
+	"github.com/raymao96/komari/web/api"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )

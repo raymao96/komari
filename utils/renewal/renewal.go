@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/auditlog"
-	"github.com/nuomiiiii/lite/database/clients"
-	"github.com/nuomiiiii/lite/database/models"
-	messageevent "github.com/nuomiiiii/lite/database/models/messageEvent"
-	"github.com/nuomiiiii/lite/pkg/timeutil"
-	"github.com/nuomiiiii/lite/utils/messageSender"
-	agent_runtime "github.com/nuomiiiii/lite/web/agent"
+	"github.com/raymao96/komari/database/auditlog"
+	"github.com/raymao96/komari/database/clients"
+	"github.com/raymao96/komari/database/models"
+	messageevent "github.com/raymao96/komari/database/models/messageEvent"
+	"github.com/raymao96/komari/pkg/timeutil"
+	"github.com/raymao96/komari/utils/messageSender"
+	agent_runtime "github.com/raymao96/komari/web/agent"
 )
 
 func CheckAndAutoRenewal(client models.Client) {

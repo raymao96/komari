@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/clients"
-	"github.com/nuomiiiii/lite/database/metricstore"
-	"github.com/nuomiiiii/lite/database/models"
-	"github.com/nuomiiiii/lite/database/tasks"
-	"github.com/nuomiiiii/lite/pkg/metric"
-	"github.com/nuomiiiii/lite/pkg/rpc"
+	"github.com/raymao96/komari/database/clients"
+	"github.com/raymao96/komari/database/metricstore"
+	"github.com/raymao96/komari/database/models"
+	"github.com/raymao96/komari/database/tasks"
+	"github.com/raymao96/komari/pkg/metric"
+	"github.com/raymao96/komari/pkg/rpc"
 )
 
 const defaultMetricQueryPoints = 500

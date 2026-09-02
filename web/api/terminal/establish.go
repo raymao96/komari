@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nuomiiiii/lite/web/api"
+	"github.com/raymao96/komari/web/api"
 )
 
 func EstablishConnection(c *gin.Context) {

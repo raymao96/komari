@@ -3,7 +3,7 @@ package v2
 import (
 	"time"
 
-	v1 "github.com/nuomiiiii/lite/protocol/v1"
+	v1 "github.com/raymao96/komari/protocol/v1"
 )
 
 const (

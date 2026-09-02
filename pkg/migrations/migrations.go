@@ -3,15 +3,15 @@ package migrations
 import (
 	"encoding/json"
 	"fmt"
-	logger "github.com/nuomiiiii/lite/utils/log"
+	logger "github.com/raymao96/komari/utils/log"
 	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/models"
-	appconfig "github.com/nuomiiiii/lite/pkg/config"
+	"github.com/raymao96/komari/database/models"
+	appconfig "github.com/raymao96/komari/pkg/config"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

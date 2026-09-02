@@ -3,8 +3,8 @@ package notificationdefaults
 import (
 	"testing"
 
-	"github.com/nuomiiiii/lite/database/models"
-	"github.com/nuomiiiii/lite/pkg/config"
+	"github.com/raymao96/komari/database/models"
+	"github.com/raymao96/komari/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"

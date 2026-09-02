@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nuomiiiii/lite/database/auditlog"
-	"github.com/nuomiiiii/lite/database/dbcore"
-	"github.com/nuomiiiii/lite/database/models"
-	"github.com/nuomiiiii/lite/database/trafficledger"
-	"github.com/nuomiiiii/lite/web/api"
+	"github.com/raymao96/komari/database/auditlog"
+	"github.com/raymao96/komari/database/dbcore"
+	"github.com/raymao96/komari/database/models"
+	"github.com/raymao96/komari/database/trafficledger"
+	"github.com/raymao96/komari/web/api"
 	"gorm.io/gorm"
 )
 

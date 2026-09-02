@@ -7,7 +7,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nuomiiiii/lite/web/api"
+	"github.com/raymao96/komari/web/api"
 )
 
 const maxChunkRequestSize = ChunkSize + 1*1024*1024

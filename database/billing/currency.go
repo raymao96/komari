@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nuomiiiii/lite/database/models"
+	"github.com/raymao96/komari/database/models"
 	xcurrency "golang.org/x/text/currency"
 	"gorm.io/gorm"
 )

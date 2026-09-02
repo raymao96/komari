@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nuomiiiii/lite/pkg/config"
+	"github.com/raymao96/komari/pkg/config"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )

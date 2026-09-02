@@ -4,9 +4,9 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/nuomiiiii/lite/cmd"
-	"github.com/nuomiiiii/lite/utils"
-	logger "github.com/nuomiiiii/lite/utils/log"
+	"github.com/raymao96/komari/cmd"
+	"github.com/raymao96/komari/utils"
+	logger "github.com/raymao96/komari/utils/log"
 )
 
 func main() {

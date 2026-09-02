@@ -4,15 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	logger "github.com/nuomiiiii/lite/utils/log"
+	logger "github.com/raymao96/komari/utils/log"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/models"
-	"github.com/nuomiiiii/lite/pkg/config"
-	"github.com/nuomiiiii/lite/pkg/metric"
+	"github.com/raymao96/komari/database/models"
+	"github.com/raymao96/komari/pkg/config"
+	"github.com/raymao96/komari/pkg/metric"
 )
 
 var (

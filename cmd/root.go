@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/nuomiiiii/lite/cmd/flags"
+	"github.com/raymao96/komari/cmd/flags"
 
 	"github.com/spf13/cobra"
 )

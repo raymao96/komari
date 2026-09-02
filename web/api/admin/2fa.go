@@ -4,8 +4,8 @@ import (
 	"image/png"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nuomiiiii/lite/database/accounts"
-	"github.com/nuomiiiii/lite/web/api"
+	"github.com/raymao96/komari/database/accounts"
+	"github.com/raymao96/komari/web/api"
 	"github.com/pquerna/otp/totp"
 )
 

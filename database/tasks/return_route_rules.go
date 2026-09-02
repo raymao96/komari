@@ -18,7 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	logger "github.com/nuomiiiii/lite/utils/log"
+	logger "github.com/raymao96/komari/utils/log"
 )
 
 const (

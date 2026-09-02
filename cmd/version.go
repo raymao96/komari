@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/nuomiiiii/lite/utils"
+	"github.com/raymao96/komari/utils"
 	"github.com/spf13/cobra"
 )
 

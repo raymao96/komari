@@ -2,10 +2,10 @@ package metricstore
 
 import (
 	"fmt"
-	logger "github.com/nuomiiiii/lite/utils/log"
+	logger "github.com/raymao96/komari/utils/log"
 	"strings"
 
-	"github.com/nuomiiiii/lite/pkg/config"
+	"github.com/raymao96/komari/pkg/config"
 )
 
 // migration.go

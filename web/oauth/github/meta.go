@@ -1,7 +1,7 @@
 package github
 
 import (
-	"github.com/nuomiiiii/lite/web/oauth/factory"
+	"github.com/raymao96/komari/web/oauth/factory"
 	"github.com/patrickmn/go-cache"
 )
 

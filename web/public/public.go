@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nuomiiiii/lite/pkg/config"
-	"github.com/nuomiiiii/lite/pkg/thememanifest"
+	"github.com/raymao96/komari/pkg/config"
+	"github.com/raymao96/komari/pkg/thememanifest"
 )
 
 var legacyDefaultFaviconSHA256 = [32]byte{

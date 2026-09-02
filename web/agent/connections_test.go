@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	v1 "github.com/nuomiiiii/lite/protocol/v1"
-	v2 "github.com/nuomiiiii/lite/protocol/v2"
-	"github.com/nuomiiiii/lite/web/connection"
+	v1 "github.com/raymao96/komari/protocol/v1"
+	v2 "github.com/raymao96/komari/protocol/v2"
+	"github.com/raymao96/komari/web/connection"
 )
 
 func TestRecordReportKeepsLatestAndShortRecentWindow(t *testing.T) {

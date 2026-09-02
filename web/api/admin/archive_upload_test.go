@@ -24,11 +24,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nuomiiiii/lite/pkg/rpc"
-	"github.com/nuomiiiii/lite/utils/httpsserver"
-	"github.com/nuomiiiii/lite/web/api"
-	"github.com/nuomiiiii/lite/web/backup"
-	"github.com/nuomiiiii/lite/web/upload"
+	"github.com/raymao96/komari/pkg/rpc"
+	"github.com/raymao96/komari/utils/httpsserver"
+	"github.com/raymao96/komari/web/api"
+	"github.com/raymao96/komari/web/backup"
+	"github.com/raymao96/komari/web/upload"
 )
 
 func archiveUploadStore(t *testing.T) *upload.Store {

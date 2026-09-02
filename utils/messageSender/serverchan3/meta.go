@@ -1,7 +1,7 @@
 package serverchan3
 
 import (
-	"github.com/nuomiiiii/lite/utils/messageSender/factory"
+	"github.com/raymao96/komari/utils/messageSender/factory"
 )
 
 // Addition 为 Server酱³ 推送通道的配置项

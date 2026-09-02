@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/dbcore"
-	"github.com/nuomiiiii/lite/database/models"
-	"github.com/nuomiiiii/lite/utils/notifier"
+	"github.com/raymao96/komari/database/dbcore"
+	"github.com/raymao96/komari/database/models"
+	"github.com/raymao96/komari/utils/notifier"
 	"gorm.io/gorm"
 )
 

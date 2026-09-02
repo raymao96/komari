@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/nuomiiiii/lite/database/dbcore"
-	"github.com/nuomiiiii/lite/database/models"
-	"github.com/nuomiiiii/lite/database/tasks"
-	"github.com/nuomiiiii/lite/pkg/rpc"
-	"github.com/nuomiiiii/lite/utils"
+	"github.com/raymao96/komari/database/dbcore"
+	"github.com/raymao96/komari/database/models"
+	"github.com/raymao96/komari/database/tasks"
+	"github.com/raymao96/komari/pkg/rpc"
+	"github.com/raymao96/komari/utils"
 )
 
 func init() {

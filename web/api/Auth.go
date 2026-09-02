@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nuomiiiii/lite/database/accounts"
-	"github.com/nuomiiiii/lite/database/clients"
-	"github.com/nuomiiiii/lite/pkg/config"
-	"github.com/nuomiiiii/lite/pkg/rpc"
+	"github.com/raymao96/komari/database/accounts"
+	"github.com/raymao96/komari/database/clients"
+	"github.com/raymao96/komari/pkg/config"
+	"github.com/raymao96/komari/pkg/rpc"
 	"gorm.io/gorm"
 )
 

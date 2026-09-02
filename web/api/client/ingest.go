@@ -4,12 +4,12 @@ import (
 	"context"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/clients"
-	"github.com/nuomiiiii/lite/database/metricstore"
-	"github.com/nuomiiiii/lite/database/models"
-	"github.com/nuomiiiii/lite/database/tasks"
-	v1 "github.com/nuomiiiii/lite/protocol/v1"
-	agent_runtime "github.com/nuomiiiii/lite/web/agent"
+	"github.com/raymao96/komari/database/clients"
+	"github.com/raymao96/komari/database/metricstore"
+	"github.com/raymao96/komari/database/models"
+	"github.com/raymao96/komari/database/tasks"
+	v1 "github.com/raymao96/komari/protocol/v1"
+	agent_runtime "github.com/raymao96/komari/web/agent"
 )
 
 // ingest.go

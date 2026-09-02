@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/clients"
-	"github.com/nuomiiiii/lite/database/models"
+	"github.com/raymao96/komari/database/clients"
+	"github.com/raymao96/komari/database/models"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 )

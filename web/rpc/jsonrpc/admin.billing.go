@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/auditlog"
-	"github.com/nuomiiiii/lite/database/billing"
-	"github.com/nuomiiiii/lite/database/dbcore"
-	"github.com/nuomiiiii/lite/pkg/rpc"
+	"github.com/raymao96/komari/database/auditlog"
+	"github.com/raymao96/komari/database/billing"
+	"github.com/raymao96/komari/database/dbcore"
+	"github.com/raymao96/komari/pkg/rpc"
 	"gorm.io/gorm"
 )
 

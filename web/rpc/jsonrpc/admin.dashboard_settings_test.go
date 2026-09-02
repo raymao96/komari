@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/models"
-	"github.com/nuomiiiii/lite/pkg/rpc"
-	v1 "github.com/nuomiiiii/lite/protocol/v1"
-	agent_runtime "github.com/nuomiiiii/lite/web/agent"
+	"github.com/raymao96/komari/database/models"
+	"github.com/raymao96/komari/pkg/rpc"
+	v1 "github.com/raymao96/komari/protocol/v1"
+	agent_runtime "github.com/raymao96/komari/web/agent"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

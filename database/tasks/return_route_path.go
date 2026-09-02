@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/models"
-	v2 "github.com/nuomiiiii/lite/protocol/v2"
+	"github.com/raymao96/komari/database/models"
+	v2 "github.com/raymao96/komari/protocol/v2"
 )
 
 const (

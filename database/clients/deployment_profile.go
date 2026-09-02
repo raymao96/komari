@@ -10,9 +10,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nuomiiiii/lite/database/dbcore"
-	"github.com/nuomiiiii/lite/database/models"
-	v2 "github.com/nuomiiiii/lite/protocol/v2"
+	"github.com/raymao96/komari/database/dbcore"
+	"github.com/raymao96/komari/database/models"
+	v2 "github.com/raymao96/komari/protocol/v2"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/nuomiiiii/lite/database/metricstore"
+	"github.com/raymao96/komari/database/metricstore"
 )
 
 const (

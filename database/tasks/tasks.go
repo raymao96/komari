@@ -3,8 +3,8 @@ package tasks
 import (
 	"time"
 
-	"github.com/nuomiiiii/lite/database/dbcore"
-	"github.com/nuomiiiii/lite/database/models"
+	"github.com/raymao96/komari/database/dbcore"
+	"github.com/raymao96/komari/database/models"
 )
 
 func CreateTask(taskId string, clients []string, command string) error {

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nuomiiiii/lite/cmd/flags"
+	"github.com/raymao96/komari/cmd/flags"
 )
 
 const (

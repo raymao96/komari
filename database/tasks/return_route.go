@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/dbcore"
-	"github.com/nuomiiiii/lite/database/models"
-	messageevent "github.com/nuomiiiii/lite/database/models/messageEvent"
-	v2 "github.com/nuomiiiii/lite/protocol/v2"
-	"github.com/nuomiiiii/lite/utils"
-	"github.com/nuomiiiii/lite/utils/messageSender"
+	"github.com/raymao96/komari/database/dbcore"
+	"github.com/raymao96/komari/database/models"
+	messageevent "github.com/raymao96/komari/database/models/messageEvent"
+	v2 "github.com/raymao96/komari/protocol/v2"
+	"github.com/raymao96/komari/utils"
+	"github.com/raymao96/komari/utils/messageSender"
 	"gorm.io/gorm"
 )
 

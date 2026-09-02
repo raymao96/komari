@@ -3,7 +3,7 @@ package metricstore
 import (
 	"testing"
 
-	"github.com/nuomiiiii/lite/pkg/metric"
+	"github.com/raymao96/komari/pkg/metric"
 )
 
 func TestPingLossStatsFromPoints(t *testing.T) {

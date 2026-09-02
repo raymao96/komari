@@ -1,6 +1,6 @@
 package jsonrpc
 
-import "github.com/nuomiiiii/lite/pkg/rpc"
+import "github.com/raymao96/komari/pkg/rpc"
 
 // Register 以默认分组 "common" 注册方法。
 func Register(name string, cb rpc.Handler) error {

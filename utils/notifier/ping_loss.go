@@ -8,14 +8,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/dbcore"
-	"github.com/nuomiiiii/lite/database/metricstore"
-	"github.com/nuomiiiii/lite/database/models"
-	messageevent "github.com/nuomiiiii/lite/database/models/messageEvent"
-	"github.com/nuomiiiii/lite/pkg/config"
-	"github.com/nuomiiiii/lite/pkg/corn"
-	"github.com/nuomiiiii/lite/pkg/metric"
-	"github.com/nuomiiiii/lite/utils/messageSender"
+	"github.com/raymao96/komari/database/dbcore"
+	"github.com/raymao96/komari/database/metricstore"
+	"github.com/raymao96/komari/database/models"
+	messageevent "github.com/raymao96/komari/database/models/messageEvent"
+	"github.com/raymao96/komari/pkg/config"
+	"github.com/raymao96/komari/pkg/corn"
+	"github.com/raymao96/komari/pkg/metric"
+	"github.com/raymao96/komari/utils/messageSender"
 )
 
 const pingLossCheckInterval = 15 * time.Second

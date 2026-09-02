@@ -8,12 +8,12 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nuomiiiii/lite/database/metricstore"
-	appconfig "github.com/nuomiiiii/lite/pkg/config"
-	"github.com/nuomiiiii/lite/pkg/metric"
-	"github.com/nuomiiiii/lite/web/api"
-	publicapi "github.com/nuomiiiii/lite/web/api/public"
-	jsonrpc "github.com/nuomiiiii/lite/web/rpc/jsonrpc"
+	"github.com/raymao96/komari/database/metricstore"
+	appconfig "github.com/raymao96/komari/pkg/config"
+	"github.com/raymao96/komari/pkg/metric"
+	"github.com/raymao96/komari/web/api"
+	publicapi "github.com/raymao96/komari/web/api/public"
+	jsonrpc "github.com/raymao96/komari/web/rpc/jsonrpc"
 )
 
 const (

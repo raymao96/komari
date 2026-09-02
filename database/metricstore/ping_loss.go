@@ -6,7 +6,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/nuomiiiii/lite/pkg/metric"
+	"github.com/raymao96/komari/pkg/metric"
 )
 
 // PingLossStats is the reusable packet-loss aggregate over ping.loss.

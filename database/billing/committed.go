@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/models"
-	"github.com/nuomiiiii/lite/database/trafficledger"
+	"github.com/raymao96/komari/database/models"
+	"github.com/raymao96/komari/database/trafficledger"
 	"gorm.io/gorm"
 )
 

@@ -10,10 +10,10 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nuomiiiii/lite/database/metricstore"
-	"github.com/nuomiiiii/lite/database/models"
-	"github.com/nuomiiiii/lite/pkg/config"
-	installweb "github.com/nuomiiiii/lite/web/install"
+	"github.com/raymao96/komari/database/metricstore"
+	"github.com/raymao96/komari/database/models"
+	"github.com/raymao96/komari/pkg/config"
+	installweb "github.com/raymao96/komari/web/install"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )

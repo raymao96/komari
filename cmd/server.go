@@ -4,9 +4,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nuomiiiii/lite/cmd/flags"
-	"github.com/nuomiiiii/lite/database/dbcore"
-	logger "github.com/nuomiiiii/lite/utils/log"
+	"github.com/raymao96/komari/cmd/flags"
+	"github.com/raymao96/komari/database/dbcore"
+	logger "github.com/raymao96/komari/utils/log"
 	"github.com/spf13/cobra"
 )
 

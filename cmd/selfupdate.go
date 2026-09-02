@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/nuomiiiii/lite/pkg/selfupdate"
+	"github.com/raymao96/komari/pkg/selfupdate"
 	"github.com/spf13/cobra"
 )
 

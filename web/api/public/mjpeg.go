@@ -20,9 +20,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nuomiiiii/lite/database/models"
-	conf "github.com/nuomiiiii/lite/pkg/config"
-	jsonRpc "github.com/nuomiiiii/lite/web/rpc/jsonrpc"
+	"github.com/raymao96/komari/database/models"
+	conf "github.com/raymao96/komari/pkg/config"
+	jsonRpc "github.com/raymao96/komari/web/rpc/jsonrpc"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
 	"golang.org/x/image/font/opentype"

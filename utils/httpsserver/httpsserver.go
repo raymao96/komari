@@ -18,9 +18,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nuomiiiii/lite/pkg/config"
-	logger "github.com/nuomiiiii/lite/utils/log"
-	"github.com/nuomiiiii/lite/utils/requestscheme"
+	"github.com/raymao96/komari/pkg/config"
+	logger "github.com/raymao96/komari/utils/log"
+	"github.com/raymao96/komari/utils/requestscheme"
 )
 
 type Settings struct {

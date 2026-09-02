@@ -6,13 +6,13 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nuomiiiii/lite/database/auditlog"
-	"github.com/nuomiiiii/lite/database/clients"
-	"github.com/nuomiiiii/lite/pkg/rpc"
-	v2 "github.com/nuomiiiii/lite/protocol/v2"
-	"github.com/nuomiiiii/lite/utils"
-	agent_runtime "github.com/nuomiiiii/lite/web/agent"
-	"github.com/nuomiiiii/lite/web/api"
+	"github.com/raymao96/komari/database/auditlog"
+	"github.com/raymao96/komari/database/clients"
+	"github.com/raymao96/komari/pkg/rpc"
+	v2 "github.com/raymao96/komari/protocol/v2"
+	"github.com/raymao96/komari/utils"
+	agent_runtime "github.com/raymao96/komari/web/agent"
+	"github.com/raymao96/komari/web/api"
 )
 
 type browserAuthorization struct {

@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/nuomiiiii/lite/database/billing"
-	"github.com/nuomiiiii/lite/pkg/rpc"
+	"github.com/raymao96/komari/database/billing"
+	"github.com/raymao96/komari/pkg/rpc"
 )
 
 func TestBillingInputErrorsMapToHTTPBadRequest(t *testing.T) {

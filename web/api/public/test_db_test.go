@@ -4,8 +4,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/nuomiiiii/lite/cmd/flags"
-	"github.com/nuomiiiii/lite/database/dbcore"
+	"github.com/raymao96/komari/cmd/flags"
+	"github.com/raymao96/komari/database/dbcore"
 )
 
 func TestMain(m *testing.M) {

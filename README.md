@@ -1,20 +1,20 @@
 ![Lite](docs/assets/branding/lite-banner.svg)
 
-[![Release](https://img.shields.io/github/v/release/nuomiiiii/lite?label=release)](https://github.com/nuomiiiii/lite/releases)
-[![Docker](https://img.shields.io/badge/GHCR-nuomiiiii%2Flite-2496ED?logo=docker)](https://github.com/nuomiiiii/lite/pkgs/container/lite)
+[![Release](https://img.shields.io/github/v/release/nuomiiiii/lite?label=release)](https://github.com/raymao96/komari/releases)
+[![Docker](https://img.shields.io/badge/GHCR-nuomiiiii%2Flite-2496ED?logo=docker)](https://github.com/raymao96/komari/pkgs/container/lite)
 [![Telegram](https://img.shields.io/badge/Telegram-Lite-26A5E4?logo=telegram&logoColor=white)](https://t.me/komari_lite)
 [![License](https://img.shields.io/github/license/nuomiiiii/lite)](LICENSE)
 
 Lite 是一款轻量、自托管的服务器监控与运维管理工具。服务端提供 Web 管理界面，Agent 负责采集节点状态、执行延迟与回程线路探测，并在管理员授权后提供远程终端、文件管理和任务执行能力。
 
-本项目基于 [komari-monitor/komari](https://github.com/nuomiiiii/lite) 持续开发，重点改善低配置主控上的数据库占用、历史查询和维护负载，同时补充更完整的流量管理、备份迁移、接入安全与双端后台体验。
+本项目基于 [komari-monitor/komari](https://github.com/raymao96/komari) 持续开发，重点改善低配置主控上的数据库占用、历史查询和维护负载，同时补充更完整的流量管理、备份迁移、接入安全与双端后台体验。
 
-**当前正式版：[`2.3.1`](https://github.com/nuomiiiii/lite/releases/tag/2.3.1)**
+**当前正式版：[`2.3.1`](https://github.com/raymao96/komari/releases/tag/2.3.1)**
 
 > [!IMPORTANT]
-> 从 `2.2.1` 开始，系统 Web UI 与公开大屏主题已经解耦：Lite Web 只负责管理后台、远程终端等系统页面，主题只影响公开大屏。默认和保底主题都是 [Lite-Theme](https://github.com/nuomiiiii/Lite-theme)，可独立更新，并在已有其他可用主题时删除；主题管理始终要求至少保留一个可用主题。原经典主题已拆分为独立的 [komari-Classic](https://github.com/nuomiiiii/lite-Classic)，不再随 Lite 内置。从 Nezha / 旧默认主题升级时会迁到 Lite-Theme。
+> 从 `2.2.1` 开始，系统 Web UI 与公开大屏主题已经解耦：Lite Web 只负责管理后台、远程终端等系统页面，主题只影响公开大屏。默认和保底主题都是 [Lite-Theme](https://github.com/nuomiiiii/Lite-theme)，可独立更新，并在已有其他可用主题时删除；主题管理始终要求至少保留一个可用主题。原经典主题已拆分为独立的 [komari-Classic](https://github.com/raymao96/komari-Classic)，不再随 Lite 内置。从 Nezha / 旧默认主题升级时会迁到 Lite-Theme。
 
-[快速开始](#快速开始) · [功能概览](#功能概览) · [升级说明](#从旧版本升级) · [Agent](#agent-与远程管理) · [完整更新日志](https://github.com/nuomiiiii/lite/releases)
+[快速开始](#快速开始) · [功能概览](#功能概览) · [升级说明](#从旧版本升级) · [Agent](#agent-与远程管理) · [完整更新日志](https://github.com/raymao96/komari/releases)
 
 > [!WARNING]
 > Lite 只能部署在你拥有或已获得授权管理的设备上。请勿将其用于未经授权的访问、持久化、命令执行或其他滥用行为。管理员应启用 HTTPS 与双因素认证，并妥善保护 Agent Token 和备份文件。
@@ -89,7 +89,7 @@ docker run -d \
 
 ### 二进制文件
 
-从 [Releases](https://github.com/nuomiiiii/lite/releases) 下载与系统架构匹配的文件。正式版提供 Linux `386`、`amd64`、`arm64`、`loong64`、`riscv64`，以及 Windows `386`、`amd64`、`arm64` 构建。
+从 [Releases](https://github.com/raymao96/komari/releases) 下载与系统架构匹配的文件。正式版提供 Linux `386`、`amd64`、`arm64`、`loong64`、`riscv64`，以及 Windows `386`、`amd64`、`arm64` 构建。
 
 ```bash
 chmod +x Lite-linux-amd64
@@ -147,7 +147,7 @@ go build -o Lite
 
 ## 相关链接
 
-- [版本发布与完整更新日志](https://github.com/nuomiiiii/lite/releases)
+- [版本发布与完整更新日志](https://github.com/raymao96/komari/releases)
 - [Lite 文档](https://nuomiiiii.github.io/Lite-document/)
 - [Telegram 群组](https://t.me/komari_lite)
 - [Lite Agent](https://github.com/nuomiiiii/Lite-agent)

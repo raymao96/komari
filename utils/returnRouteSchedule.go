@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/models"
-	"github.com/nuomiiiii/lite/pkg/corn"
-	v2 "github.com/nuomiiiii/lite/protocol/v2"
-	agentRuntime "github.com/nuomiiiii/lite/web/agent"
+	"github.com/raymao96/komari/database/models"
+	"github.com/raymao96/komari/pkg/corn"
+	v2 "github.com/raymao96/komari/protocol/v2"
+	agentRuntime "github.com/raymao96/komari/web/agent"
 )
 
 type returnRouteTaskManager struct {

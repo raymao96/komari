@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/metricstore"
-	v1 "github.com/nuomiiiii/lite/protocol/v1"
-	"github.com/nuomiiiii/lite/web/connection"
+	"github.com/raymao96/komari/database/metricstore"
+	v1 "github.com/raymao96/komari/protocol/v1"
+	"github.com/raymao96/komari/web/connection"
 )
 
 var (

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nuomiiiii/lite/cmd/flags"
+	"github.com/raymao96/komari/cmd/flags"
 )
 
 func TestAdoptLegacyKomariSQLiteRenamesDefaultFiles(t *testing.T) {

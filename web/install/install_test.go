@@ -13,11 +13,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nuomiiiii/lite/database/metricstore"
-	"github.com/nuomiiiii/lite/database/models"
-	appconfig "github.com/nuomiiiii/lite/pkg/config"
-	"github.com/nuomiiiii/lite/web/backup"
-	"github.com/nuomiiiii/lite/web/upload"
+	"github.com/raymao96/komari/database/metricstore"
+	"github.com/raymao96/komari/database/models"
+	appconfig "github.com/raymao96/komari/pkg/config"
+	"github.com/raymao96/komari/web/backup"
+	"github.com/raymao96/komari/web/upload"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )

@@ -6,7 +6,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/models"
+	"github.com/raymao96/komari/database/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

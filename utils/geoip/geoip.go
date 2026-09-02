@@ -6,8 +6,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/nuomiiiii/lite/pkg/config"
-	logger "github.com/nuomiiiii/lite/utils/log"
+	"github.com/raymao96/komari/pkg/config"
+	logger "github.com/raymao96/komari/utils/log"
 	"github.com/patrickmn/go-cache"
 )
 

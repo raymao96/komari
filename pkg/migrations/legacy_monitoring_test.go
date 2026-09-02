@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/metricstore"
-	"github.com/nuomiiiii/lite/database/models"
-	appconfig "github.com/nuomiiiii/lite/pkg/config"
-	"github.com/nuomiiiii/lite/pkg/metric"
+	"github.com/raymao96/komari/database/metricstore"
+	"github.com/raymao96/komari/database/models"
+	appconfig "github.com/raymao96/komari/pkg/config"
+	"github.com/raymao96/komari/pkg/metric"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )

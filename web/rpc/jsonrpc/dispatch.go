@@ -3,8 +3,8 @@ package jsonrpc
 import (
 	"context"
 
-	"github.com/nuomiiiii/lite/pkg/config"
-	"github.com/nuomiiiii/lite/pkg/rpc"
+	"github.com/raymao96/komari/pkg/config"
+	"github.com/raymao96/komari/pkg/rpc"
 )
 
 // privateSiteLoginWhitelist 私有站点模式下仍允许匿名访问的方法白名单。

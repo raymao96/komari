@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nuomiiiii/lite/database/models"
+	"github.com/raymao96/komari/database/models"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )

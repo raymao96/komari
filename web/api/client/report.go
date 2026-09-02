@@ -8,16 +8,16 @@ import (
 	"sync"
 	"time"
 
-	logger "github.com/nuomiiiii/lite/utils/log"
+	logger "github.com/raymao96/komari/utils/log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	v1 "github.com/nuomiiiii/lite/protocol/v1"
-	"github.com/nuomiiiii/lite/utils/notifier"
-	agent_runtime "github.com/nuomiiiii/lite/web/agent"
-	"github.com/nuomiiiii/lite/web/api"
-	"github.com/nuomiiiii/lite/web/connection"
+	v1 "github.com/raymao96/komari/protocol/v1"
+	"github.com/raymao96/komari/utils/notifier"
+	agent_runtime "github.com/raymao96/komari/web/agent"
+	"github.com/raymao96/komari/web/api"
+	"github.com/raymao96/komari/web/connection"
 )
 
 const (

@@ -3,8 +3,8 @@ package cmd
 import (
 	"os"
 
-	"github.com/nuomiiiii/lite/database/dbcore"
-	"github.com/nuomiiiii/lite/database/models"
+	"github.com/raymao96/komari/database/dbcore"
+	"github.com/raymao96/komari/database/models"
 	"github.com/spf13/cobra"
 	"gorm.io/gorm"
 )

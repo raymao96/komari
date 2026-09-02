@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nuomiiiii/lite/cmd/flags"
+	"github.com/raymao96/komari/cmd/flags"
 )
 
 var maintenanceMu sync.Mutex

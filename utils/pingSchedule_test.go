@@ -3,7 +3,7 @@ package utils
 import (
 	"testing"
 
-	"github.com/nuomiiiii/lite/database/models"
+	"github.com/raymao96/komari/database/models"
 )
 
 func TestIsPingTaskAssignedUsesCurrentSchedule(t *testing.T) {

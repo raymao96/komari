@@ -3,16 +3,16 @@ package messageSender
 import (
 	"encoding/json"
 	"fmt"
-	logger "github.com/nuomiiiii/lite/utils/log"
+	logger "github.com/raymao96/komari/utils/log"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/nuomiiiii/lite/database"
-	"github.com/nuomiiiii/lite/database/auditlog"
-	"github.com/nuomiiiii/lite/database/models"
-	"github.com/nuomiiiii/lite/pkg/config"
-	"github.com/nuomiiiii/lite/utils/messageSender/factory"
+	"github.com/raymao96/komari/database"
+	"github.com/raymao96/komari/database/auditlog"
+	"github.com/raymao96/komari/database/models"
+	"github.com/raymao96/komari/pkg/config"
+	"github.com/raymao96/komari/utils/messageSender/factory"
 )
 
 var (

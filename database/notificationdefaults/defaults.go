@@ -3,9 +3,9 @@ package notificationdefaults
 import (
 	"fmt"
 
-	"github.com/nuomiiiii/lite/database/dbcore"
-	"github.com/nuomiiiii/lite/database/models"
-	"github.com/nuomiiiii/lite/pkg/config"
+	"github.com/raymao96/komari/database/dbcore"
+	"github.com/raymao96/komari/database/models"
+	"github.com/raymao96/komari/pkg/config"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

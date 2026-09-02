@@ -10,9 +10,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nuomiiiii/lite/database/auditlog"
-	"github.com/nuomiiiii/lite/pkg/config"
-	"github.com/nuomiiiii/lite/pkg/rpc"
+	"github.com/raymao96/komari/database/auditlog"
+	"github.com/raymao96/komari/pkg/config"
+	"github.com/raymao96/komari/pkg/rpc"
 )
 
 const (

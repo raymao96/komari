@@ -3,7 +3,7 @@ package notification
 import (
 	"context"
 
-	"github.com/nuomiiiii/lite/database/notificationdefaults"
+	"github.com/raymao96/komari/database/notificationdefaults"
 )
 
 func init() {

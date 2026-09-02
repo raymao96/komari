@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nuomiiiii/lite/pkg/rpc"
-	"github.com/nuomiiiii/lite/web/api"
+	"github.com/raymao96/komari/pkg/rpc"
+	"github.com/raymao96/komari/web/api"
 )
 
 func EstablishAgent(c *gin.Context) {

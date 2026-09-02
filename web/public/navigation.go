@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nuomiiiii/lite/pkg/config"
-	"github.com/nuomiiiii/lite/pkg/thememanifest"
+	"github.com/raymao96/komari/pkg/config"
+	"github.com/raymao96/komari/pkg/thememanifest"
 )
 
 const (

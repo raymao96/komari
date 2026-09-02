@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/metricstore"
-	v2 "github.com/nuomiiiii/lite/protocol/v2"
+	"github.com/raymao96/komari/database/metricstore"
+	v2 "github.com/raymao96/komari/protocol/v2"
 )
 
 const (

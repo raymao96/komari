@@ -3,13 +3,13 @@ package metricstore
 import (
 	"context"
 	"fmt"
-	logger "github.com/nuomiiiii/lite/utils/log"
+	logger "github.com/raymao96/komari/utils/log"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/nuomiiiii/lite/pkg/config"
-	"github.com/nuomiiiii/lite/pkg/metric"
+	"github.com/raymao96/komari/pkg/config"
+	"github.com/raymao96/komari/pkg/metric"
 )
 
 // store_migration.go

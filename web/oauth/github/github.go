@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nuomiiiii/lite/utils"
-	"github.com/nuomiiiii/lite/web/oauth/factory"
+	"github.com/raymao96/komari/utils"
+	"github.com/raymao96/komari/web/oauth/factory"
 	"github.com/patrickmn/go-cache"
 )
 

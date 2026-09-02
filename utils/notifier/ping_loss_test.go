@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/models"
-	messageevent "github.com/nuomiiiii/lite/database/models/messageEvent"
+	"github.com/raymao96/komari/database/models"
+	messageevent "github.com/raymao96/komari/database/models/messageEvent"
 	"github.com/stretchr/testify/assert"
 )
 

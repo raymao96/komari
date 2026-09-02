@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/clients"
-	"github.com/nuomiiiii/lite/database/models"
-	messageevent "github.com/nuomiiiii/lite/database/models/messageEvent"
-	"github.com/nuomiiiii/lite/pkg/config"
-	"github.com/nuomiiiii/lite/pkg/timeutil"
-	"github.com/nuomiiiii/lite/utils/messageSender"
-	"github.com/nuomiiiii/lite/utils/renewal"
+	"github.com/raymao96/komari/database/clients"
+	"github.com/raymao96/komari/database/models"
+	messageevent "github.com/raymao96/komari/database/models/messageEvent"
+	"github.com/raymao96/komari/pkg/config"
+	"github.com/raymao96/komari/pkg/timeutil"
+	"github.com/raymao96/komari/utils/messageSender"
+	"github.com/raymao96/komari/utils/renewal"
 )
 
 func CheckExpireScheduledWork() {

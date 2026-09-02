@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/nuomiiiii/lite/web/connection"
+	"github.com/raymao96/komari/web/connection"
 )
 
 // websocketIdleTimeout is how long the server waits without any WebSocket

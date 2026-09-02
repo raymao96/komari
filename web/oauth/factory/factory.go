@@ -1,9 +1,9 @@
 package factory
 
 import (
-	logger "github.com/nuomiiiii/lite/utils/log"
+	logger "github.com/raymao96/komari/utils/log"
 
-	"github.com/nuomiiiii/lite/utils/item"
+	"github.com/raymao96/komari/utils/item"
 )
 
 var (

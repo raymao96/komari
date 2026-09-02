@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/nuomiiiii/lite/pkg/config"
+	"github.com/raymao96/komari/pkg/config"
 )
 
 func SplitAllowlist(raw string) []string {

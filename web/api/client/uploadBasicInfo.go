@@ -4,9 +4,9 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/nuomiiiii/lite/database/clients"
-	"github.com/nuomiiiii/lite/pkg/config"
-	"github.com/nuomiiiii/lite/utils/geoip"
+	"github.com/raymao96/komari/database/clients"
+	"github.com/raymao96/komari/pkg/config"
+	"github.com/raymao96/komari/utils/geoip"
 
 	"github.com/gin-gonic/gin"
 )

@@ -14,11 +14,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/nuomiiiii/lite/cmd/flags"
-	"github.com/nuomiiiii/lite/database/dbcore"
-	"github.com/nuomiiiii/lite/database/metricstore"
-	"github.com/nuomiiiii/lite/web/api"
-	"github.com/nuomiiiii/lite/web/backup"
+	"github.com/raymao96/komari/cmd/flags"
+	"github.com/raymao96/komari/database/dbcore"
+	"github.com/raymao96/komari/database/metricstore"
+	"github.com/raymao96/komari/web/api"
+	"github.com/raymao96/komari/web/backup"
 )
 
 type backupScope string

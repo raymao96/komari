@@ -1,4 +1,4 @@
-module github.com/nuomiiiii/lite
+module github.com/raymao96/komari
 
 go 1.25.0
 

@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nuomiiiii/lite/utils"
+	"github.com/raymao96/komari/utils"
 )
 
 const (

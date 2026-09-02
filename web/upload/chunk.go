@@ -17,8 +17,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	logger "github.com/nuomiiiii/lite/utils/log"
-	"github.com/nuomiiiii/lite/web/backup"
+	logger "github.com/raymao96/komari/utils/log"
+	"github.com/raymao96/komari/web/backup"
 )
 
 const (

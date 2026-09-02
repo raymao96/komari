@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nuomiiiii/lite/database/models"
-	"github.com/nuomiiiii/lite/utils"
+	"github.com/raymao96/komari/database/models"
+	"github.com/raymao96/komari/utils"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
