@@ -39,7 +39,6 @@ komari
 # Compiled system UI is produced by CI from Lite-web.
 /web/public/systemUI/dist/
 .DS_Store
-**/ .DS_Store
 
 # Cursor editor rules stay on this machine.
 .cursor/
