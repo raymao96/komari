@@ -16,6 +16,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+<<<<<<< HEAD
 	"github.com/raymao96/komari/cmd/flags"
 	"github.com/raymao96/komari/database"
 	"github.com/raymao96/komari/database/accounts"
@@ -47,6 +48,41 @@ import (
 	storageupdateweb "github.com/raymao96/komari/web/storageupdate"
 	upgradeweb "github.com/raymao96/komari/web/update"
 	"github.com/raymao96/komari/web/upload"
+=======
+	"github.com/raymao96/komari/cmd/flags"
+	"github.com/raymao96/komari/database"
+	"github.com/raymao96/komari/database/accounts"
+	"github.com/raymao96/komari/database/auditlog"
+	"github.com/raymao96/komari/database/billing"
+	"github.com/raymao96/komari/database/dbcore"
+	"github.com/raymao96/komari/database/metricstore"
+	"github.com/raymao96/komari/database/models"
+	d_notification "github.com/raymao96/komari/database/notification"
+	"github.com/raymao96/komari/database/tasks"
+	"github.com/raymao96/komari/pkg/config"
+	"github.com/raymao96/komari/pkg/corn"
+	"github.com/raymao96/komari/pkg/metric"
+	"github.com/raymao96/komari/pkg/migrations"
+	"github.com/raymao96/komari/pkg/timeutil"
+	"github.com/raymao96/komari/utils"
+	"github.com/raymao96/komari/utils/cloudflared"
+	"github.com/raymao96/komari/utils/geoip"
+	"github.com/raymao96/komari/utils/httpsserver"
+	logger "github.com/raymao96/komari/utils/log"
+	"github.com/raymao96/komari/utils/messageSender"
+	"github.com/raymao96/komari/utils/notifier"
+	agent_runtime "github.com/raymao96/komari/web/agent"
+	"github.com/raymao96/komari/web/api"
+	installweb "github.com/raymao96/komari/web/install"
+	"github.com/raymao96/komari/web/oauth"
+	frontendpublic "github.com/raymao96/komari/web/public"
+	"github.com/raymao96/komari/web/remotectl"
+	"github.com/raymao96/komari/web/router"
+	"github.com/raymao96/komari/web/security"
+	storageupdateweb "github.com/raymao96/komari/web/storageupdate"
+	upgradeweb "github.com/raymao96/komari/web/update"
+	"github.com/raymao96/komari/web/upload"
+>>>>>>> upstream2/main
 	"gorm.io/gorm"
 )
 
@@ -111,6 +147,9 @@ func (a *App) Bootstrap() error {
 	if err := dbcore.Initialize(); err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
 	}
+	if err := accounts.MigrateStoredSecrets(); err != nil {
+		return fmt.Errorf("failed to migrate account secrets: %w", err)
+	}
 	a.dbReady = true
 	a.addCleanup("database", func(context.Context) error {
 		return dbcore.Close()
@@ -126,6 +165,9 @@ func (a *App) Bootstrap() error {
 	}
 	if err := normalizeSiteFactoryDefaults(); err != nil {
 		return fmt.Errorf("failed to normalize site factory defaults: %w", err)
+	}
+	if err := migrateAllowRemoteManagement(); err != nil {
+		return fmt.Errorf("failed to migrate remote management setting: %w", err)
 	}
 
 	conf, err := config.GetManyAs[config.Settings]()
@@ -165,6 +207,22 @@ func normalizeSiteFactoryDefaults() error {
 		updates[config.SiteFactoryDefaultsKey] = true
 	}
 	return config.SetMany(updates)
+}
+
+// migrateAllowRemoteManagement keeps remote management on for existing
+// installations and leaves new databases at the Settings default (off).
+func migrateAllowRemoteManagement() error {
+	all, err := config.GetAll()
+	if err != nil {
+		return err
+	}
+	if _, exists := all[config.AllowRemoteManagementKey]; exists {
+		return nil
+	}
+	if _, hasSite := all[config.SitenameKey]; hasSite {
+		return config.Set(config.AllowRemoteManagementKey, true)
+	}
+	return nil
 }
 
 func configValueAsInt(value any) (int, bool) {
@@ -258,14 +316,28 @@ func processPendingMetricCleanupAtStartup(db *gorm.DB) {
 	}
 }
 
+var (
+	hasPendingRestoreFn        = dbcore.HasPendingRestore
+	invalidateRestoredSessions = accounts.InvalidateAllSessions
+	commitPendingRestoreFn     = dbcore.CommitPendingRestore
+	revokeRemoteAfterRestore   = remotectl.RevokeAll
+)
+
 // CommitRestore marks a staged backup as fully usable only after the main
 // database, metric store, providers, and router all initialized. Background
 // tasks start afterwards so a candidate restore cannot emit notifications or
 // perform scheduled writes before it becomes durable.
 func (a *App) CommitRestore() error {
-	if err := dbcore.CommitPendingRestore(); err != nil {
+	if !hasPendingRestoreFn() {
+		return nil
+	}
+	if err := invalidateRestoredSessions(); err != nil {
+		return fmt.Errorf("invalidate restored login sessions: %w", err)
+	}
+	if err := commitPendingRestoreFn(); err != nil {
 		return fmt.Errorf("commit verified backup restore: %w", err)
 	}
+	revokeRemoteAfterRestore()
 	return nil
 }
 
@@ -569,6 +641,12 @@ func (a *App) StartBackground() error {
 		return nil
 	})
 
+	stopExecTimeoutSweep := startExpiredExecEventSweep()
+	a.addCleanup("exec-event-timeout", func(context.Context) error {
+		stopExecTimeoutSweep()
+		return nil
+	})
+
 	registerScheduledWork()
 	a.addCleanup("scheduler", func(context.Context) error {
 		corn.StopAll()
@@ -583,6 +661,28 @@ func (a *App) StartBackground() error {
 		return nil
 	})
 	return nil
+}
+
+func startExpiredExecEventSweep() func() {
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				agent_runtime.SweepExpiredV2Events()
+			}
+		}
+	}()
+	return func() {
+		close(stop)
+		<-done
+	}
 }
 
 // registerReloadHandlers 把此前散落各处的 config.Subscribe 统一登记到 reload 管理器。

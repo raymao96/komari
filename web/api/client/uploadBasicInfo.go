@@ -2,13 +2,18 @@ package client
 
 import (
 	"net"
-	"net/http"
 
+<<<<<<< HEAD
 	"github.com/raymao96/komari/database/clients"
 	"github.com/raymao96/komari/pkg/config"
 	"github.com/raymao96/komari/utils/geoip"
 
 	"github.com/gin-gonic/gin"
+=======
+	"github.com/raymao96/komari/database/clients"
+	"github.com/raymao96/komari/pkg/config"
+	"github.com/raymao96/komari/utils/geoip"
+>>>>>>> upstream2/main
 )
 
 func getClientIPType(ip net.IP) int {
@@ -26,6 +31,7 @@ func getClientIPType(ip net.IP) int {
 func saveClientBasicInfo(info map[string]interface{}, uuid string, fallbackIP string) error {
 	monthRotate, reportsMonthRotate := info["month_rotate"]
 	delete(info, "month_rotate")
+	delete(info, "remote_control_protected")
 	info["uuid"] = uuid
 	applyFallbackClientIP(info, fallbackIP)
 	appendClientRegionFromGeoIP(info)
@@ -88,36 +94,4 @@ func appendClientRegionFromGeoIP(info map[string]interface{}) {
 		info["region"] = region
 		return
 	}
-}
-
-func UploadBasicInfo(c *gin.Context) {
-	var cbi = map[string]interface{}{}
-	if err := c.ShouldBindJSON(&cbi); err != nil {
-		c.JSON(400, gin.H{"status": "error", "error": "Invalid or missing data"})
-		return
-	}
-
-	uuid, ok := clientUUIDFromContext(c)
-	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"status": "error", "error": "Invalid token"})
-		return
-	}
-
-	if err := ingestBasicInfo(uuid, cbi, c.ClientIP()); err != nil {
-		c.JSON(500, gin.H{"status": "error", "error": err})
-		return
-	}
-
-	response := gin.H{"status": "success"}
-	runtimeConfig, err := getClientRuntimeConfig(uuid)
-	if err != nil {
-		c.JSON(500, gin.H{"status": "error", "error": err.Error()})
-		return
-	}
-	if runtimeConfig != nil {
-		response["config"] = runtimeConfig
-	} else {
-		response["request_config_state"] = true
-	}
-	c.JSON(200, response)
 }

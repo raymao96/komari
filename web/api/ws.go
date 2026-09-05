@@ -6,12 +6,21 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+<<<<<<< HEAD
 	"github.com/raymao96/komari/database/accounts"
 	"github.com/raymao96/komari/database/dbcore"
 	"github.com/raymao96/komari/database/models"
 	"github.com/raymao96/komari/database/trafficledger"
 	"github.com/raymao96/komari/protocol/v1"
 	agent_runtime "github.com/raymao96/komari/web/agent"
+=======
+	"github.com/raymao96/komari/database/accounts"
+	"github.com/raymao96/komari/database/dbcore"
+	"github.com/raymao96/komari/database/models"
+	"github.com/raymao96/komari/database/trafficledger"
+	v2 "github.com/raymao96/komari/protocol/v2"
+	agent_runtime "github.com/raymao96/komari/web/agent"
+>>>>>>> upstream2/main
 )
 
 func GetClients(c *gin.Context) {
@@ -55,11 +64,11 @@ func GetClients(c *gin.Context) {
 	for {
 		var resp struct {
 			Online []string             `json:"online"` // 已建立连接的客户端uuid列表
-			Data   map[string]v1.Report `json:"data"`   // 最后上报的数据
+			Data   map[string]v2.Report `json:"data"`   // 最后上报的数据
 		}
 
 		resp.Online = []string{}
-		resp.Data = map[string]v1.Report{}
+		resp.Data = map[string]v2.Report{}
 
 		_, data, err := conn.ReadMessage()
 		if err != nil {

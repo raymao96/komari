@@ -5,18 +5,23 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+<<<<<<< HEAD
 	"github.com/raymao96/komari/web/api"
 	"github.com/raymao96/komari/web/public"
+=======
+	"github.com/raymao96/komari/pkg/themehttp"
+	"github.com/raymao96/komari/web/api"
+	"github.com/raymao96/komari/web/public"
+>>>>>>> upstream2/main
 )
 
 const (
-	marketPreviewMaxSize  = 8 << 20
+	marketPreviewMaxSize  = themehttp.MaxPreview
 	marketPreviewCacheDir = "data/cache/theme-previews"
 )
 
@@ -24,15 +29,6 @@ func ServeThemeMarketPreview(c *gin.Context) {
 	rawURL := strings.TrimSpace(c.Query("url"))
 	if err := validateThemeMarketURLSyntax(rawURL); err != nil {
 		api.RespondError(c, http.StatusBadRequest, "Invalid preview URL: "+err.Error())
-		return
-	}
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		api.RespondError(c, http.StatusBadRequest, "Invalid preview URL")
-		return
-	}
-	if isPrivateIP(parsed.Hostname()) {
-		api.RespondError(c, http.StatusBadRequest, "requests to private or internal addresses are not allowed")
 		return
 	}
 

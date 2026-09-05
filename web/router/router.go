@@ -2,6 +2,7 @@ package router
 
 import (
 	"github.com/gin-gonic/gin"
+<<<<<<< HEAD
 	"github.com/raymao96/komari/web/api"
 	"github.com/raymao96/komari/web/api/admin"
 	"github.com/raymao96/komari/web/api/client"
@@ -11,6 +12,16 @@ import (
 	installweb "github.com/raymao96/komari/web/install"
 	"github.com/raymao96/komari/web/public"
 	jsonRpc "github.com/raymao96/komari/web/rpc/jsonrpc"
+=======
+	"github.com/raymao96/komari/web/api"
+	"github.com/raymao96/komari/web/api/admin"
+	"github.com/raymao96/komari/web/api/client"
+	public_api "github.com/raymao96/komari/web/api/public"
+	"github.com/raymao96/komari/web/api/remote"
+	installweb "github.com/raymao96/komari/web/install"
+	"github.com/raymao96/komari/web/public"
+	jsonRpc "github.com/raymao96/komari/web/rpc/jsonrpc"
+>>>>>>> upstream2/main
 )
 
 // Register binds all HTTP, WebSocket, JSON-RPC and static frontend routes.
@@ -65,21 +76,11 @@ func registerAgentRoutes(r *gin.Engine) {
 	// AutoDiscovery 注册使用独立的 Authorization key 鉴权，保留 REST handler。
 	r.POST("/api/clients/register", client.RegisterClient)
 
-	tokenAuthorized := r.Group("/api/clients", api.RequireRole(api.RoleAdmin, api.RoleClient))
+	agentOnly := r.Group("/api/clients", api.RequireRole(api.RoleClient))
 	{
-		// 上报类（WS / 原始流 / 兼容协议）保留 REST handler。
-		tokenAuthorized.GET("/report", client.WebSocketReport)
-		tokenAuthorized.POST("/uploadBasicInfo", client.UploadBasicInfo)
-		tokenAuthorized.POST("/report", client.UploadReport)
-		tokenAuthorized.GET("/v2/rpc", client.WebSocketV2RPC)
-		tokenAuthorized.POST("/v2/rpc", client.UploadV2RPC)
-		tokenAuthorized.GET("/terminal", terminal.EstablishConnection)
-		tokenAuthorized.GET("/remote", remote.EstablishAgent)
-
-		// JSON 接口 -> RPC2 (client: 命名空间)。
-		tokenAuthorized.POST("/task/result", jsonRpc.Bind("client:taskResult", jsonRpc.WithRaw()))
-		tokenAuthorized.GET("/ping/tasks", jsonRpc.Bind("client:getPingTasks", jsonRpc.WithRaw()))
-		tokenAuthorized.POST("/ping/result", jsonRpc.Bind("client:uploadPingResult", jsonRpc.WithRaw()))
+		agentOnly.GET("/v2/rpc", client.WebSocketV2RPC)
+		agentOnly.POST("/v2/rpc", client.UploadV2RPC)
+		agentOnly.GET("/remote", remote.EstablishAgent)
 	}
 }
 
@@ -158,7 +159,7 @@ func registerAdminRoutes(r *gin.Engine) {
 	task := g.Group("/task")
 	{
 		task.GET("/all", jsonRpc.Bind("admin:getTasks"))
-		task.POST("/exec", api.RequireSensitive2FA(), jsonRpc.Bind("admin:exec"))
+		task.POST("/exec", jsonRpc.Bind("admin:exec"))
 		task.GET("/:task_id", jsonRpc.Bind("admin:getTaskById", jsonRpc.WithPath("task_id")))
 		task.GET("/:task_id/result", jsonRpc.Bind("admin:getTaskResultsByTaskId", jsonRpc.WithPath("task_id")))
 		task.GET("/:task_id/result/:uuid", jsonRpc.Bind("admin:getSpecificTaskResult", jsonRpc.WithPath("task_id", "uuid")))
@@ -197,6 +198,7 @@ func registerAdminRoutes(r *gin.Engine) {
 		clientGroup.POST("/remote/authorize", remote.Authorize)
 		clientGroup.POST("/remote/session", remote.CreateSession)
 		clientGroup.POST("/remote/session/cancel", remote.CancelSession)
+		clientGroup.POST("/remote/revoke", remote.RevokeGrant)
 		clientGroup.GET("/remote", remote.ConnectBrowser)
 		clientGroup.POST("/add", jsonRpc.Bind("admin:addClient", jsonRpc.WithFlat()))
 		clientGroup.GET("/list", jsonRpc.Bind("admin:listClients", jsonRpc.WithRaw()))
@@ -206,7 +208,7 @@ func registerAdminRoutes(r *gin.Engine) {
 		clientGroup.POST("/:uuid/billing/ip-change", jsonRpc.Bind("admin:createBillingIPChange", jsonRpc.WithPath("uuid")))
 		clientGroup.POST("/:uuid/billing/one-time", jsonRpc.Bind("admin:createBillingOneTimeFee", jsonRpc.WithPath("uuid")))
 		clientGroup.POST("/:uuid/remove", jsonRpc.Bind("admin:removeClient", jsonRpc.WithPath("uuid")))
-		clientGroup.GET("/:uuid/token", jsonRpc.Bind("admin:getClientToken", jsonRpc.WithPath("uuid"), jsonRpc.WithFlat()))
+		clientGroup.GET("/:uuid/token", api.RequireSensitive2FA(), jsonRpc.Bind("admin:getClientToken", jsonRpc.WithPath("uuid"), jsonRpc.WithFlat()))
 		clientGroup.GET("/:uuid/deployment-profile", jsonRpc.Bind("admin:getClientDeploymentProfile", jsonRpc.WithPath("uuid"), jsonRpc.WithRaw()))
 		clientGroup.POST("/:uuid/deployment-profile", jsonRpc.Bind("admin:saveClientDeploymentProfile", jsonRpc.WithPath("uuid"), jsonRpc.WithRaw()))
 		clientGroup.GET("/:uuid/traffic-calibration", admin.GetTrafficCalibration)
@@ -214,7 +216,6 @@ func registerAdminRoutes(r *gin.Engine) {
 		clientGroup.GET("/:uuid/traffic-daily", jsonRpc.Bind("admin:getClientTrafficDaily", jsonRpc.WithPath("uuid"), jsonRpc.WithRaw()))
 		clientGroup.POST("/token/rotate", api.RequireSensitive2FA(), jsonRpc.Bind("admin:rotateClientToken"))
 		clientGroup.POST("/order", jsonRpc.Bind("admin:orderClients"))
-		clientGroup.GET("/:uuid/terminal", api.RequireSensitive2FA(), terminal.RequestTerminal)
 	}
 
 	// records

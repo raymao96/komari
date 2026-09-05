@@ -11,9 +11,15 @@ import (
 	"testing"
 	"time"
 
+<<<<<<< HEAD
 	"github.com/raymao96/komari/database/models"
 	"github.com/raymao96/komari/pkg/metric"
 	v1 "github.com/raymao96/komari/protocol/v1"
+=======
+	"github.com/raymao96/komari/database/models"
+	"github.com/raymao96/komari/pkg/metric"
+	v2 "github.com/raymao96/komari/protocol/v2"
+>>>>>>> upstream2/main
 )
 
 func TestDefaultRollupPolicy(t *testing.T) {
@@ -1098,15 +1104,15 @@ func TestGetRecordsByClientAndTimeReadsRollupsAfterRawCompaction(t *testing.T) {
 		Connections:    321,
 		ConnectionsUdp: 12,
 	}
-	if _, err := WriteReport(ctx, v1.Report{
+	if _, err := WriteReport(ctx, v2.Report{
 		UUID:      rec.Client,
 		UpdatedAt: ts,
-		CPU:       v1.CPUReport{Usage: float64(rec.Cpu)},
-		Ram:       v1.RamReport{Used: rec.Ram, Total: rec.RamTotal},
-		Load:      v1.LoadReport{Load1: float64(rec.Load)},
-		Disk:      v1.DiskReport{Used: rec.Disk, Total: rec.DiskTotal},
+		CPU:       v2.CPUReport{Usage: float64(rec.Cpu)},
+		Ram:       v2.RamReport{Used: rec.Ram, Total: rec.RamTotal},
+		Load:      v2.LoadReport{Load1: float64(rec.Load)},
+		Disk:      v2.DiskReport{Used: rec.Disk, Total: rec.DiskTotal},
 		Process:   rec.Process,
-		Connections: v1.ConnectionsReport{
+		Connections: v2.ConnectionsReport{
 			TCP: rec.Connections,
 			UDP: rec.ConnectionsUdp,
 		},
