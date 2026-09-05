@@ -15,7 +15,7 @@ import (
 	"github.com/raymao96/komari/database/trafficledger"
 	"github.com/raymao96/komari/pkg/config"
 	"github.com/raymao96/komari/pkg/rpc"
-	v1 "github.com/raymao96/komari/protocol/v1"
+	v2 "github.com/raymao96/komari/protocol/v2"
 	agent_runtime "github.com/raymao96/komari/web/agent"
 )
 
@@ -124,7 +124,7 @@ func buildDashboardAlerts(clientList []models.Client, now time.Time) dashboardAl
 	}
 }
 
-func buildDashboardResourceAlerts(clientByID map[string]models.Client, reports map[string]*v1.Report) dashboardAlertSummary {
+func buildDashboardResourceAlerts(clientByID map[string]models.Client, reports map[string]*v2.Report) dashboardAlertSummary {
 	var rules []models.LoadNotification
 	if err := dbcore.GetDBInstance().Find(&rules).Error; err != nil {
 		return dashboardAlertSummary{Error: err.Error()}
@@ -160,7 +160,7 @@ func buildDashboardResourceAlerts(clientByID map[string]models.Client, reports m
 	return result
 }
 
-func dashboardResourceValue(report *v1.Report, client models.Client, metricName string) (float64, bool) {
+func dashboardResourceValue(report *v2.Report, client models.Client, metricName string) (float64, bool) {
 	percentage := func(used, total int64) (float64, bool) {
 		if total <= 0 {
 			return 0, false
@@ -266,7 +266,7 @@ func buildDashboardLatencyAlerts(now time.Time) dashboardAlertSummary {
 	return result
 }
 
-func buildDashboardTrafficAlerts(clientList []models.Client, reports map[string]*v1.Report, now time.Time) dashboardAlertSummary {
+func buildDashboardTrafficAlerts(clientList []models.Client, reports map[string]*v2.Report, now time.Time) dashboardAlertSummary {
 	enabled, err := config.GetAs[bool](config.NotificationEnabledKey, true)
 	if err != nil {
 		return dashboardAlertSummary{Error: err.Error()}
