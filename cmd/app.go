@@ -41,6 +41,7 @@ import (
 	agent_runtime "github.com/raymao96/komari/web/agent"
 	"github.com/raymao96/komari/web/api"
 	installweb "github.com/raymao96/komari/web/install"
+	"github.com/raymao96/komari/web/mcp"
 	"github.com/raymao96/komari/web/oauth"
 	frontendpublic "github.com/raymao96/komari/web/public"
 	"github.com/raymao96/komari/web/remotectl"
@@ -134,6 +135,9 @@ func (a *App) Bootstrap() error {
 	}
 	if err := migrateAllowRemoteManagement(); err != nil {
 		return fmt.Errorf("failed to migrate remote management setting: %w", err)
+	}
+	if err := mcp.InvalidateActiveLeases(); err != nil {
+		logger.Errorf("mcp", "Failed to invalidate leftover MCP leases after restart: %v", err)
 	}
 
 	conf, err := config.GetManyAs[config.Settings]()
@@ -913,6 +917,9 @@ func cleanupScheduledData() {
 
 	auditlog.RemoveOldLogs()
 	accounts.RemoveExpiredSessions()
+	if err := mcp.CleanupHistory(); err != nil {
+		logger.Errorf("server", "Failed to clean MCP history: %v", err)
+	}
 	if err := tasks.CleanupMainlandReachabilityData(); err != nil {
 		logger.Errorf("server", "Failed to clean mainland reachability samples: %v", err)
 	}

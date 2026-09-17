@@ -24,6 +24,7 @@ import (
 	"github.com/raymao96/komari/utils/messageSender"
 	agent_runtime "github.com/raymao96/komari/web/agent"
 	"github.com/raymao96/komari/web/api/remote"
+	"github.com/raymao96/komari/web/mcp"
 	"github.com/raymao96/komari/web/remotectl"
 	"gorm.io/gorm"
 )
@@ -57,6 +58,13 @@ func init() {
 		if err := persistIncomingTaskResult(taskID, uuid, v2.DeliveryTimeoutTaskResult, "", -1, time.Now().UTC()); err != nil {
 			logger.Errorf("rpc", "failed to persist exec delivery timeout for task %s client %s: %v", taskID, uuid, err)
 		}
+		mcp.CompleteOperation(taskID, uuid, v2.TaskResultParams{
+			TaskID:     taskID,
+			Result:     v2.DeliveryTimeoutTaskResult,
+			ExitCode:   -1,
+			FinishedAt: time.Now().UTC(),
+			Status:     v2.TaskResultStatusInterrupted,
+		})
 	})
 }
 

@@ -17,7 +17,8 @@ import (
 	"github.com/raymao96/komari/pkg/config"
 	"github.com/raymao96/komari/pkg/rpc"
 	v2 "github.com/raymao96/komari/protocol/v2"
-	agent "github.com/raymao96/komari/web/agent"
+	agent 	"github.com/raymao96/komari/web/agent"
+	"github.com/raymao96/komari/web/mcp"
 	"github.com/raymao96/komari/web/remotectl"
 )
 
@@ -149,6 +150,11 @@ func adminEditSettings(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.
 	if err := req.BindParams(&cfg); err != nil {
 		return nil, rpc.MakeError(rpc.InvalidParams, "Invalid or missing request body: "+err.Error(), nil)
 	}
+	if settingsRequireHumanSession(cfg) {
+		if err := denyAPIKey(ctx); err != nil {
+			return nil, err
+		}
+	}
 	if rawTime, ok := cfg[config.TrafficReportTimeKey]; ok {
 		reportTime, ok := rawTime.(string)
 		if !ok {
@@ -182,6 +188,7 @@ func adminEditSettings(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.
 	delete(cfg, config.AutoDiscoveryKeyKey)
 
 	previousRemote, _ := config.GetAs[bool](config.AllowRemoteManagementKey, false)
+	previousMCP, _ := config.GetAs[bool](config.AllowMCPKey, false)
 
 	touchedMetric := metricKeysTouched(cfg)
 	if touchedMetric {
@@ -216,11 +223,22 @@ func adminEditSettings(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.
 	if raw, ok := cfg[config.AllowRemoteManagementKey]; ok && previousRemote && !toBool(raw, false) {
 		removed := agent.DrainRemoteDelivery(func() []agent.RemovedV2Event {
 			remotectl.RevokeAll()
-			return agent.RemoveAllV2EventsByMethods(v2.MethodAgentRemote, v2.MethodAgentExec)
+			return agent.RemoveAllV2EventsByMethods(
+				v2.MethodAgentRemote,
+				v2.MethodAgentExec,
+				v2.MethodAgentMCPExec,
+				v2.MethodAgentMCPFile,
+				v2.MethodAgentMCPCancel,
+				v2.MethodAgentMCPRenew,
+				v2.MethodAgentMCPRevoke,
+			)
 		})
 		if err := cancelUndeliveredRemoteExec(removed); err != nil {
 			return nil, rpc.MakeError(rpc.InternalError, "远程管理已关闭，但未能写入已取消任务结果: "+err.Error(), nil)
 		}
+	}
+	if raw, ok := cfg[config.AllowMCPKey]; ok && previousMCP && !toBool(raw, false) {
+		mcp.DrainMCPDelivery()
 	}
 	// 配置已落库，热重载 metric store（无需重启）。连接已在上面验证过，
 	// 这里再次失败属异常情况，回报给用户。
@@ -358,6 +376,15 @@ func adminClearAllRecords(ctx context.Context, _ *rpc.JsonRpcRequest) (any, *rpc
 	actor, ip := auditActor(ctx)
 	auditlog.Log(ip, actor, "clear all records", "info")
 	return nil, nil
+}
+
+func settingsRequireHumanSession(cfg map[string]interface{}) bool {
+	for _, key := range []string{config.CustomHeadKey, config.CustomBodyKey, config.ThemeKey} {
+		if _, ok := cfg[key]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func adminOrderClients(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {

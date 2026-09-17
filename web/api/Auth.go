@@ -51,6 +51,18 @@ func IdentityMiddleware() gin.HandlerFunc {
 	}
 }
 
+func RejectAPIKey() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		p := GetPrincipal(c)
+		if p != nil && (p.IsAPIKey || p.Type == rpc.PrincipalAPIKey) {
+			RespondError(c, http.StatusForbidden, "API keys cannot perform this action")
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
 // RequireRole 声明式权限校验中间件，仅允许指定角色通过。
 func RequireRole(allowedRoles ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -196,4 +208,9 @@ func isApiKeyValid(apiKey string) bool {
 		return false
 	}
 	return apiKey == "Bearer "+apiKeyConfig
+}
+
+// IsSiteAPIKey reports whether Authorization is the site-wide API key.
+func IsSiteAPIKey(authorization string) bool {
+	return isApiKeyValid(strings.TrimSpace(authorization))
 }

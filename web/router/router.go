@@ -8,6 +8,7 @@ import (
 	public_api "github.com/raymao96/komari/web/api/public"
 	"github.com/raymao96/komari/web/api/remote"
 	installweb "github.com/raymao96/komari/web/install"
+	"github.com/raymao96/komari/web/mcp"
 	"github.com/raymao96/komari/web/public"
 	jsonRpc "github.com/raymao96/komari/web/rpc/jsonrpc"
 )
@@ -22,6 +23,7 @@ func Register(r *gin.Engine) {
 	})
 
 	registerPublicRoutes(r)
+	mcp.RegisterPublic(r)
 	registerAgentRoutes(r)
 	registerAdminRoutes(r)
 
@@ -75,6 +77,7 @@ func registerAdminRoutes(r *gin.Engine) {
 	g.GET("/dashboard", jsonRpc.Bind("admin:getDashboard", jsonRpc.WithQuery("sections", "limit"), jsonRpc.WithRaw()))
 	g.GET("/dashboard/charts", jsonRpc.Bind("admin:getDashboardCharts", jsonRpc.WithQuery("sections", "limit"), jsonRpc.WithRaw()))
 	g.GET("/dashboard/alerts", jsonRpc.Bind("admin:getDashboardAlertItems", jsonRpc.WithQuery("kind"), jsonRpc.WithRaw()))
+	g.GET("/dashboard/traffic-day", jsonRpc.Bind("admin:getDashboardTrafficDay", jsonRpc.WithQuery("day"), jsonRpc.WithRaw()))
 	billingGroup := g.Group("/billing")
 	{
 		billingGroup.GET("/overview", jsonRpc.Bind("admin:getBillingOverview", jsonRpc.WithQuery("currency")))
@@ -86,9 +89,10 @@ func registerAdminRoutes(r *gin.Engine) {
 	}
 
 	// --- 二进制/流/重定向类，保留 REST handler ---
-	g.GET("/download/backup", admin.DownloadBackup)
+	g.GET("/download/backup", api.RejectAPIKey(), admin.DownloadBackup)
 	uploadHandler := admin.NewArchiveUploadHandler()
 	uploadGroup := g.Group("/upload")
+	uploadGroup.Use(api.RejectAPIKey())
 	{
 		uploadGroup.POST("/init", uploadHandler.Init)
 		uploadGroup.POST("/chunk", uploadHandler.Chunk)
@@ -98,15 +102,16 @@ func registerAdminRoutes(r *gin.Engine) {
 	g.GET("/test/geoip", jsonRpc.Bind("admin:testGeoip", jsonRpc.WithQuery("ip")))
 	g.POST("/test/sendMessage", jsonRpc.Bind("admin:testSendMessage"))
 	g.POST("/update/mmdb", admin.UpdateMmdbGeoIP)
-	g.POST("/update/user", admin.UpdateUser)
+	g.POST("/update/user", api.RejectAPIKey(), admin.UpdateUser)
 	g.PUT("/update/favicon", admin.UploadFavicon)
 	g.POST("/update/favicon", admin.DeleteFavicon)
 	g.GET("/settings/https", admin.GetHTTPSSettings)
 	g.POST("/settings/https", admin.UpdateHTTPSSettings)
 	g.POST("/settings/https/reload", admin.ReloadHTTPSCertificate)
 
-	// theme 含文件操作，保留 REST handler。
+	// theme 含文件操作，保留 REST handler。API Key 不能改主题。
 	theme := g.Group("/theme")
+	theme.Use(api.RejectAPIKey())
 	{
 		theme.GET("/list", admin.ListThemes)
 		theme.POST("/delete", admin.DeleteTheme)
@@ -193,13 +198,13 @@ func registerAdminRoutes(r *gin.Engine) {
 		clientGroup.POST("/:uuid/billing/ip-change", jsonRpc.Bind("admin:createBillingIPChange", jsonRpc.WithPath("uuid")))
 		clientGroup.POST("/:uuid/billing/one-time", jsonRpc.Bind("admin:createBillingOneTimeFee", jsonRpc.WithPath("uuid")))
 		clientGroup.POST("/:uuid/remove", jsonRpc.Bind("admin:removeClient", jsonRpc.WithPath("uuid")))
-		clientGroup.GET("/:uuid/token", api.RequireSensitive2FA(), jsonRpc.Bind("admin:getClientToken", jsonRpc.WithPath("uuid"), jsonRpc.WithFlat()))
+		clientGroup.GET("/:uuid/token", api.RejectAPIKey(), api.RequireSensitive2FA(), jsonRpc.Bind("admin:getClientToken", jsonRpc.WithPath("uuid"), jsonRpc.WithFlat()))
 		clientGroup.GET("/:uuid/deployment-profile", jsonRpc.Bind("admin:getClientDeploymentProfile", jsonRpc.WithPath("uuid"), jsonRpc.WithRaw()))
 		clientGroup.POST("/:uuid/deployment-profile", jsonRpc.Bind("admin:saveClientDeploymentProfile", jsonRpc.WithPath("uuid"), jsonRpc.WithRaw()))
 		clientGroup.GET("/:uuid/traffic-calibration", admin.GetTrafficCalibration)
 		clientGroup.POST("/:uuid/traffic-calibration", admin.UpdateTrafficCalibration)
 		clientGroup.GET("/:uuid/traffic-daily", jsonRpc.Bind("admin:getClientTrafficDaily", jsonRpc.WithPath("uuid"), jsonRpc.WithRaw()))
-		clientGroup.POST("/token/rotate", api.RequireSensitive2FA(), jsonRpc.Bind("admin:rotateClientToken"))
+		clientGroup.POST("/token/rotate", api.RejectAPIKey(), api.RequireSensitive2FA(), jsonRpc.Bind("admin:rotateClientToken"))
 		clientGroup.POST("/order", jsonRpc.Bind("admin:orderClients"))
 	}
 
@@ -219,6 +224,8 @@ func registerAdminRoutes(r *gin.Engine) {
 	}
 
 	g.GET("/logs", jsonRpc.Bind("admin:getLogs", jsonRpc.WithQuery("limit", "page")))
+
+	mcp.RegisterAdmin(g)
 
 	// clipboard
 	clipboardGroup := g.Group("/clipboard")
