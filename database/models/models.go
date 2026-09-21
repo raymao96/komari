@@ -50,8 +50,10 @@ type Client struct {
 	TrafficLimit           int64      `json:"traffic_limit" gorm:"type:bigint"`
 	TrafficLimitType       string     `json:"traffic_limit_type" gorm:"type:varchar(10);default:'sum'"` // 流量阈值类型：sum max min up down
 	TrafficResetDay        *int       `json:"traffic_reset_day,omitempty" gorm:"type:int"`              // nil: follow agent; 0: disabled; 1-31: monthly reset day
+	TrafficResetTime       string     `json:"traffic_reset_time" gorm:"type:varchar(8);not null;default:'00:00:00'"`
+	TrafficResetTimezone   string     `json:"traffic_reset_timezone" gorm:"type:varchar(64);not null;default:'Asia/Shanghai'"`
 	TrafficResetAllowance  int64      `json:"traffic_reset_allowance" gorm:"type:bigint;not null;default:0"`
-	TrafficResetCycle      string     `json:"traffic_reset_cycle,omitempty" gorm:"type:varchar(10);not null;default:''"`
+	TrafficResetCycle      string     `json:"traffic_reset_cycle,omitempty" gorm:"type:varchar(64);not null;default:''"`
 	EffectiveTrafficLimit  int64      `json:"effective_traffic_limit" gorm:"-"`
 	EffectiveTrafficType   string     `json:"effective_traffic_type" gorm:"-"`
 	DeploymentStatus       string     `json:"deployment_status" gorm:"-"`
@@ -86,9 +88,24 @@ type User struct {
 	TwoFactorCounter int64     `json:"-" gorm:"not null;default:0"`                        // Last accepted TOTP counter
 	Language         string    `json:"language,omitempty" gorm:"type:varchar(32);not null;default:''"`
 	Color            string    `json:"color,omitempty" gorm:"type:varchar(16);not null;default:''"`
+	AvatarVersion    string    `json:"avatar_version,omitempty" gorm:"type:varchar(64);not null;default:''"`
 	Sessions         []Session `json:"sessions,omitempty" gorm:"foreignKey:UUID;references:UUID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+// PasskeyCredential stores a WebAuthn authenticator for one account.
+type PasskeyCredential struct {
+	ID                string     `json:"id" gorm:"type:varchar(36);primaryKey"`
+	UserUUID          string     `json:"user_uuid" gorm:"type:varchar(36);index;not null"`
+	RPID              string     `json:"rp_id" gorm:"type:varchar(255);uniqueIndex:ux_passkey_rp_credential;not null"`
+	CredentialID      string     `json:"credential_id" gorm:"type:varchar(512);uniqueIndex:ux_passkey_rp_credential;not null"`
+	Name              string     `json:"name" gorm:"type:varchar(100);not null"`
+	CredentialData    []byte     `json:"-" gorm:"type:blob;not null"`
+	AAGUID            string     `json:"aaguid,omitempty" gorm:"type:varchar(64);not null;default:''"`
+	CreatedAt         time.Time  `json:"created_at"`
+	LastUsedAt        *time.Time `json:"last_used_at"`
+	CreationUserAgent string     `json:"creation_user_agent" gorm:"type:text"`
 }
 
 // Session manages user sessions
@@ -195,18 +212,18 @@ type MCPLease struct {
 func (MCPLease) TableName() string { return "mcp_leases" }
 
 type MCPToken struct {
-	Hash                 string    `json:"-" gorm:"type:varchar(64);primaryKey"`
-	Kind                 string    `json:"kind" gorm:"type:varchar(16);index;not null"`
-	FamilyID             string    `json:"family_id" gorm:"type:varchar(64);index;not null"`
-	LeaseID              string    `json:"lease_id" gorm:"type:varchar(64);index"`
-	ClientID             string    `json:"client_id" gorm:"type:varchar(128);index;not null"`
-	RedirectURI          string    `json:"redirect_uri" gorm:"type:varchar(512)"`
-	CodeChallenge        string    `json:"-" gorm:"type:varchar(128)"`
-	CodeChallengeMethod  string    `json:"-" gorm:"type:varchar(16)"`
-	Resource             string    `json:"resource" gorm:"type:varchar(512)"`
-	Used                 bool      `json:"used" gorm:"default:false"`
-	ExpiresAt            time.Time `json:"expires_at" gorm:"index"`
-	CreatedAt            time.Time `json:"created_at"`
+	Hash                string    `json:"-" gorm:"type:varchar(64);primaryKey"`
+	Kind                string    `json:"kind" gorm:"type:varchar(16);index;not null"`
+	FamilyID            string    `json:"family_id" gorm:"type:varchar(64);index;not null"`
+	LeaseID             string    `json:"lease_id" gorm:"type:varchar(64);index"`
+	ClientID            string    `json:"client_id" gorm:"type:varchar(128);index;not null"`
+	RedirectURI         string    `json:"redirect_uri" gorm:"type:varchar(512)"`
+	CodeChallenge       string    `json:"-" gorm:"type:varchar(128)"`
+	CodeChallengeMethod string    `json:"-" gorm:"type:varchar(16)"`
+	Resource            string    `json:"resource" gorm:"type:varchar(512)"`
+	Used                bool      `json:"used" gorm:"default:false"`
+	ExpiresAt           time.Time `json:"expires_at" gorm:"index"`
+	CreatedAt           time.Time `json:"created_at"`
 }
 
 func (MCPToken) TableName() string { return "mcp_tokens" }

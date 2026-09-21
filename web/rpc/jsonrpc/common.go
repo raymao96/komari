@@ -229,8 +229,7 @@ func getNodes(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcEr
 	if err != nil {
 		return nil, rpc.MakeError(rpc.InternalError, "Failed to get client info", err.Error())
 	}
-	meta := rpc.MetaFromContext(ctx)
-	isAdmin := meta != nil && meta.Principal != nil && meta.Principal.HasRole(rpc.RoleAdmin)
+	isAdmin := isLoginFromCtx(ctx)
 	sendIPAddrToGuest, _ := config.GetAs[bool](config.SendIpAddrToGuestKey)
 	nodes := presentThemeNodes(cinfo, isAdmin, sendIPAddrToGuest)
 	if params.UUID != "" {
@@ -251,6 +250,13 @@ func getPublicInfo(_ context.Context, _ *rpc.JsonRpcRequest) (any, *rpc.JsonRpcE
 	return info, nil
 }
 
+func gpuUsageFromReport(rep *v2.Report) float32 {
+	if rep == nil || rep.GPU == nil {
+		return 0
+	}
+	return float32(rep.GPU.AverageUsage)
+}
+
 func getNodesLatestStatus(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
 	var params struct {
 		UUID    string   `json:"uuid"`
@@ -259,7 +265,6 @@ func getNodesLatestStatus(ctx context.Context, req *rpc.JsonRpcRequest) (any, *r
 	}
 	req.BindParams(&params)
 
-	meta := rpc.MetaFromContext(ctx)
 	latest := agent_runtime.GetLatestReport() // map[string]*v2.Report (copy)
 	// The compact admin view also shows billing-cycle usage. This helper is
 	// cached for 15 seconds, so the 5-second status poll does not rescan SQLite.
@@ -271,7 +276,7 @@ func getNodesLatestStatus(ctx context.Context, req *rpc.JsonRpcRequest) (any, *r
 	}
 
 	// Hidden 过滤
-	if meta.Principal == nil || !meta.Principal.HasRole(rpc.RoleAdmin) {
+	if !isLoginFromCtx(ctx) {
 		cinfo, err := clients.GetAllClientBasicInfo()
 		if err != nil {
 			return nil, rpc.MakeError(rpc.InternalError, "Failed to get client info", err.Error())
@@ -297,30 +302,33 @@ func getNodesLatestStatus(ctx context.Context, req *rpc.JsonRpcRequest) (any, *r
 	}
 
 	type recordLike struct {
-		Client         string              `json:"client"`
-		Time           time.Time           `json:"time"`
-		Cpu            float32             `json:"cpu"`
-		Gpu            float32             `json:"gpu"`
-		Ram            int64               `json:"ram"`
-		RamTotal       int64               `json:"ram_total"`
-		Swap           int64               `json:"swap"`
-		SwapTotal      int64               `json:"swap_total"`
-		Load           float32             `json:"load"`
-		Load5          float32             `json:"load5"`
-		Load15         float32             `json:"load15"`
-		Temp           float32             `json:"temp"`
-		Disk           int64               `json:"disk"`
-		DiskTotal      int64               `json:"disk_total"`
-		NetIn          int64               `json:"net_in"`
-		NetOut         int64               `json:"net_out"`
-		NetTotalUp     int64               `json:"net_total_up"`
-		NetTotalDown   int64               `json:"net_total_down"`
-		Process        int                 `json:"process"`
-		Connections    int                 `json:"connections"`
-		ConnectionsUdp int                 `json:"connections_udp"`
-		Online         bool                `json:"online"`
-		Uptime         int64               `json:"uptime"`
-		Ping           map[string]pingStat `json:"ping"`
+		Client          string              `json:"client"`
+		Time            time.Time           `json:"time"`
+		Cpu             float32             `json:"cpu"`
+		Gpu             float32             `json:"gpu"`
+		GpuCount        int                 `json:"gpu_count,omitempty"`
+		GpuAverageUsage float64             `json:"gpu_average_usage,omitempty"`
+		GpuDetailedInfo []v2.GPUDeviceInfo  `json:"gpu_detailed_info,omitempty"`
+		Ram             int64               `json:"ram"`
+		RamTotal        int64               `json:"ram_total"`
+		Swap            int64               `json:"swap"`
+		SwapTotal       int64               `json:"swap_total"`
+		Load            float32             `json:"load"`
+		Load5           float32             `json:"load5"`
+		Load15          float32             `json:"load15"`
+		Temp            float32             `json:"temp"`
+		Disk            int64               `json:"disk"`
+		DiskTotal       int64               `json:"disk_total"`
+		NetIn           int64               `json:"net_in"`
+		NetOut          int64               `json:"net_out"`
+		NetTotalUp      int64               `json:"net_total_up"`
+		NetTotalDown    int64               `json:"net_total_down"`
+		Process         int                 `json:"process"`
+		Connections     int                 `json:"connections"`
+		ConnectionsUdp  int                 `json:"connections_udp"`
+		Online          bool                `json:"online"`
+		Uptime          int64               `json:"uptime"`
+		Ping            map[string]pingStat `json:"ping"`
 	}
 
 	respMap := make(map[string]recordLike, len(latest))
@@ -347,7 +355,7 @@ func getNodesLatestStatus(ctx context.Context, req *rpc.JsonRpcRequest) (any, *r
 			Client:         uuid,
 			Time:           rep.UpdatedAt,
 			Cpu:            float32(rep.CPU.Usage),
-			Gpu:            0,
+			Gpu:            gpuUsageFromReport(rep),
 			Ram:            rep.Ram.Used,
 			RamTotal:       rep.Ram.Total,
 			Swap:           rep.Swap.Used,
@@ -368,6 +376,11 @@ func getNodesLatestStatus(ctx context.Context, req *rpc.JsonRpcRequest) (any, *r
 			Online:         onlineSet[uuid],
 			Uptime:         rep.Uptime,
 			Ping:           stats,
+		}
+		if rep.GPU != nil {
+			rl.GpuCount = rep.GPU.Count
+			rl.GpuAverageUsage = rep.GPU.AverageUsage
+			rl.GpuDetailedInfo = rep.GPU.DetailedInfo
 		}
 		respMap[uuid] = rl
 	}
@@ -398,6 +411,7 @@ func getNodesLatestStatus(ctx context.Context, req *rpc.JsonRpcRequest) (any, *r
 func getMe(ctx context.Context, _ *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
 	var resp struct {
 		TwoFAEnabled bool   `json:"2fa_enabled"`
+		HasPassword  bool   `json:"has_password"`
 		LoggedIn     bool   `json:"logged_in"`
 		SSOId        string `json:"sso_id"`
 		SSOType      string `json:"sso_type"`
@@ -408,6 +422,10 @@ func getMe(ctx context.Context, _ *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) 
 	}
 
 	meta := rpc.MetaFromContext(ctx)
+	if meta == nil || meta.Principal == nil {
+		resp.LoggedIn = false
+		return resp, nil
+	}
 
 	switch meta.Principal.Type {
 	case rpc.PrincipalUser, rpc.PrincipalAPIKey:
@@ -417,6 +435,7 @@ func getMe(ctx context.Context, _ *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) 
 			return resp, nil
 		}
 		resp.TwoFAEnabled = meta.User.TwoFactor != ""
+		resp.HasPassword = meta.User.Passwd != ""
 		resp.LoggedIn = true
 		resp.SSOId = meta.User.SSOID
 		resp.SSOType = meta.User.SSOType
@@ -465,12 +484,7 @@ func getNodeRecentStatus(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rp
 	if params.UUID == "" {
 		return nil, rpc.MakeError(rpc.InvalidParams, "UUID is required", params)
 	}
-	meta := rpc.MetaFromContext(ctx)
-	// 登录状态检查
-	isLogin := false
-	if meta.Principal != nil && meta.Principal.HasRole(rpc.RoleAdmin) {
-		isLogin = true
-	}
+	isLogin := isLoginFromCtx(ctx)
 
 	// 仅在未登录时需要 Hidden 信息做过滤
 	hiddenMap := map[string]bool{}
@@ -538,7 +552,7 @@ func getNodeRecentStatus(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rp
 			Client:         params.UUID,
 			Time:           r.UpdatedAt,
 			Cpu:            float32(r.CPU.Usage),
-			Gpu:            0,
+			Gpu:            gpuUsageFromReport(&r),
 			Ram:            r.Ram.Used,
 			RamTotal:       r.Ram.Total,
 			Swap:           r.Swap.Used,
