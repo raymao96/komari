@@ -59,7 +59,16 @@ func (cache *dashboardModuleCache[T]) get(
 		if value, ok := cache.current(now, key, ttl); ok {
 			return value, nil
 		}
-		value, err := load()
+		var value T
+		var err error
+		func() {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					err = fmt.Errorf("dashboard module panic: %v", recovered)
+				}
+			}()
+			value, err = load()
+		}()
 		if err != nil {
 			return nil, err
 		}
@@ -269,6 +278,7 @@ func buildDashboardChartsCached(ctx context.Context, now time.Time, sections das
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(dashboardQueryLimit())
 	key := strconv.Itoa(rankingLimit)
+	pingTasks, pingErr := loadDashboardPingTasks(sections)
 	var traffic dashboardTrafficSummary
 	var latency dashboardLatencySummary
 	var jitter []dashboardLatencyJitterRankItem
@@ -293,7 +303,7 @@ func buildDashboardChartsCached(ctx context.Context, now time.Time, sections das
 		g.Go(func() error {
 			value, loadErr := dashboardLatencyModuleCache.get(gctx, now, key, cacheTTL,
 				func() (dashboardLatencySummary, error) {
-					return loadDashboardLatency(gctx, clientList, now, rankingLimit)
+					return loadDashboardLatency(gctx, clientList, pingTasks, now, rankingLimit)
 				})
 			if loadErr != nil {
 				latency.Error = loadErr.Error()
@@ -305,9 +315,13 @@ func buildDashboardChartsCached(ctx context.Context, now time.Time, sections das
 	}
 	if sections&dashboardChartLatencyJitter != 0 {
 		g.Go(func() error {
+			if pingErr != nil {
+				jitterError = pingErr.Error()
+				return nil
+			}
 			value, loadErr := dashboardJitterModuleCache.get(gctx, now, key, cacheTTL,
 				func() ([]dashboardLatencyJitterRankItem, error) {
-					return loadDashboardLatencyJitter(gctx, clientList, now, rankingLimit)
+					return loadDashboardLatencyJitter(gctx, clientList, pingTasks, now, rankingLimit)
 				})
 			if loadErr != nil {
 				jitterError = loadErr.Error()
@@ -319,9 +333,13 @@ func buildDashboardChartsCached(ctx context.Context, now time.Time, sections das
 	}
 	if sections&dashboardChartPacketLoss != 0 {
 		g.Go(func() error {
+			if pingErr != nil {
+				packetLoss = dashboardPacketLossSummary{Error: pingErr.Error()}
+				return nil
+			}
 			value, loadErr := dashboardPacketLossModuleCache.get(gctx, now, key, cacheTTL,
 				func() (dashboardPacketLossSummary, error) {
-					return loadDashboardPacketLoss(gctx, clientList, now, rankingLimit)
+					return loadDashboardPacketLoss(gctx, clientList, pingTasks, now, rankingLimit)
 				})
 			if loadErr != nil {
 				packetLoss = dashboardPacketLossSummary{Error: loadErr.Error()}

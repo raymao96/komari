@@ -12,6 +12,7 @@ import (
 
 	"github.com/raymao96/komari/database/dbcore"
 	"github.com/raymao96/komari/database/models"
+	"github.com/raymao96/komari/pkg/trafficreset"
 	v2 "github.com/raymao96/komari/protocol/v2"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -35,6 +36,15 @@ type DeploymentDeliveryState struct {
 	UpdatedAt  *time.Time `json:"updated_at,omitempty"`
 	SentAt     *time.Time `json:"sent_at,omitempty"`
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
+}
+
+// ClientDispatch is the Agent-facing result of saving Client fields that may
+// also bump a persisted runtime config revision.
+type ClientDispatch struct {
+	RuntimeChanged bool
+	HasProfile     bool
+	Config         v2.ConfigParams
+	Delivery       DeploymentDeliveryState
 }
 
 // DeploymentProfile contains both runtime-manageable settings and values that
@@ -63,6 +73,8 @@ type DeploymentProfile struct {
 	Interval                 float64 `json:"interval"`
 	EnableMonthRotate        bool    `json:"enable_month_rotate"`
 	MonthRotate              int     `json:"month_rotate"`
+	MonthRotateTime          string  `json:"month_rotate_time"`
+	MonthRotateTimezone      string  `json:"month_rotate_timezone"`
 }
 
 func (profile *DeploymentProfile) UnmarshalJSON(data []byte) error {
@@ -96,11 +108,47 @@ func (profile *DeploymentProfile) UnmarshalJSON(data []byte) error {
 
 func defaultDeploymentProfile(client models.Client) DeploymentProfile {
 	profile := DeploymentProfile{Platform: "linux"}
-	if client.TrafficResetDay != nil && *client.TrafficResetDay > 0 {
-		profile.EnableMonthRotate = true
-		profile.MonthRotate = *client.TrafficResetDay
-	}
+	overlayTrafficResetFromClient(&profile, client)
 	return profile
+}
+
+func overlayTrafficResetFromClient(profile *DeploymentProfile, client models.Client) {
+	profile.EnableMonthRotate = client.TrafficResetDay != nil && *client.TrafficResetDay > 0
+	if profile.EnableMonthRotate {
+		profile.MonthRotate = *client.TrafficResetDay
+	} else {
+		profile.MonthRotate = 0
+	}
+	clock, err := trafficreset.NormalizeClock(client.TrafficResetTime)
+	if err != nil {
+		clock = trafficreset.DefaultTime
+	}
+	timezone, err := trafficreset.NormalizeTimezone(client.TrafficResetTimezone)
+	if err != nil {
+		timezone = trafficreset.DefaultTimezone
+	}
+	profile.MonthRotateTime = clock
+	profile.MonthRotateTimezone = timezone
+}
+
+func trafficResetClientUpdates(profile DeploymentProfile) map[string]any {
+	resetDay := 0
+	if profile.EnableMonthRotate {
+		resetDay = profile.MonthRotate
+	}
+	clock := profile.MonthRotateTime
+	if clock == "" {
+		clock = trafficreset.DefaultTime
+	}
+	timezone := profile.MonthRotateTimezone
+	if timezone == "" {
+		timezone = trafficreset.DefaultTimezone
+	}
+	return map[string]any{
+		"traffic_reset_day":      resetDay,
+		"traffic_reset_time":     clock,
+		"traffic_reset_timezone": timezone,
+	}
 }
 
 func GetDeploymentProfile(clientUUID string) (DeploymentProfile, bool, error) {
@@ -108,7 +156,10 @@ func GetDeploymentProfile(clientUUID string) (DeploymentProfile, bool, error) {
 }
 
 func GetDeploymentProfileWithDelivery(clientUUID string) (DeploymentProfile, bool, DeploymentDeliveryState, error) {
-	db := dbcore.GetDBInstance()
+	return getDeploymentProfileWithDelivery(dbcore.GetDBInstance(), clientUUID)
+}
+
+func getDeploymentProfileWithDelivery(db *gorm.DB, clientUUID string) (DeploymentProfile, bool, DeploymentDeliveryState, error) {
 	profile, saved, err := getDeploymentProfile(db, clientUUID)
 	if err != nil || !saved {
 		return profile, saved, DeploymentDeliveryState{}, err
@@ -120,9 +171,109 @@ func GetDeploymentProfileWithDelivery(clientUUID string) (DeploymentProfile, boo
 	return profile, true, deploymentDeliveryState(stored), nil
 }
 
+func RuntimeConfigForAgent(clientUUID string) (*v2.ConfigParams, error) {
+	return runtimeConfigForAgent(dbcore.GetDBInstance(), clientUUID)
+}
+
+func runtimeConfigForAgent(db *gorm.DB, clientUUID string) (*v2.ConfigParams, error) {
+	var clientInfo models.Client
+	if err := db.Select("uuid", "traffic_reset_day", "traffic_reset_time", "traffic_reset_timezone").
+		First(&clientInfo, "uuid = ?", clientUUID).Error; err != nil {
+		return nil, err
+	}
+	profile, saved, deliveryState, err := getDeploymentProfileWithDelivery(db, clientUUID)
+	if err != nil {
+		return nil, err
+	}
+	if saved {
+		config := profile.RuntimeConfig()
+		config.Revision = deliveryState.Revision
+		ApplyResetClock(&config, clientInfo)
+		return &config, nil
+	}
+	if clientInfo.TrafficResetDay == nil {
+		return nil, nil
+	}
+	config := AgentMonthRotateConfig(clientInfo)
+	return &config, nil
+}
+
+func syncDeploymentResetClock(db *gorm.DB, clientUUID string, previous, next models.Client) (ClientDispatch, error) {
+	if !db.Migrator().HasTable(&models.ClientDeploymentProfile{}) {
+		return ClientDispatch{Config: AgentMonthRotateConfig(next)}, nil
+	}
+	var stored models.ClientDeploymentProfile
+	err := db.First(&stored, "client = ?", clientUUID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return ClientDispatch{Config: AgentMonthRotateConfig(next)}, nil
+	}
+	if err != nil {
+		return ClientDispatch{}, err
+	}
+
+	var profile DeploymentProfile
+	if err := json.Unmarshal([]byte(stored.Config), &profile); err != nil {
+		return ClientDispatch{}, fmt.Errorf("decode existing deployment profile: %w", err)
+	}
+	if err := normalizeDeploymentProfile(&profile); err != nil {
+		return ClientDispatch{}, fmt.Errorf("validate existing deployment profile: %w", err)
+	}
+
+	before := profile
+	overlayTrafficResetFromClient(&before, previous)
+	after := profile
+	overlayTrafficResetFromClient(&after, next)
+	if reflect.DeepEqual(before.RuntimeConfig(), after.RuntimeConfig()) {
+		config := after.RuntimeConfig()
+		config.Revision = stored.Revision
+		ApplyResetClock(&config, next)
+		return ClientDispatch{
+			HasProfile: true,
+			Config:     config,
+			Delivery:   deploymentDeliveryState(stored),
+		}, nil
+	}
+
+	encoded, err := json.Marshal(after)
+	if err != nil {
+		return ClientDispatch{}, fmt.Errorf("encode deployment profile: %w", err)
+	}
+	now := time.Now().UTC()
+	revision := stored.Revision + 1
+	if revision == 0 {
+		revision = 1
+	}
+	updates := map[string]any{
+		"config":              string(encoded),
+		"revision":            revision,
+		"delivery_status":     DeploymentDeliverySaved,
+		"delivery_error":      "",
+		"saved_at":            now,
+		"delivery_updated_at": now,
+		"sent_at":             nil,
+		"finished_at":         nil,
+		"updated_at":          now,
+	}
+	if err := db.Model(&models.ClientDeploymentProfile{}).Where("client = ?", clientUUID).Updates(updates).Error; err != nil {
+		return ClientDispatch{}, err
+	}
+	if err := db.First(&stored, "client = ?", clientUUID).Error; err != nil {
+		return ClientDispatch{}, err
+	}
+	config := after.RuntimeConfig()
+	config.Revision = stored.Revision
+	ApplyResetClock(&config, next)
+	return ClientDispatch{
+		RuntimeChanged: true,
+		HasProfile:     true,
+		Config:         config,
+		Delivery:       deploymentDeliveryState(stored),
+	}, nil
+}
+
 func getDeploymentProfile(db *gorm.DB, clientUUID string) (DeploymentProfile, bool, error) {
 	var client models.Client
-	if err := db.Select("uuid", "traffic_reset_day").First(&client, "uuid = ?", clientUUID).Error; err != nil {
+	if err := db.Select("uuid", "traffic_reset_day", "traffic_reset_time", "traffic_reset_timezone").First(&client, "uuid = ?", clientUUID).Error; err != nil {
 		return DeploymentProfile{}, false, err
 	}
 
@@ -142,12 +293,7 @@ func getDeploymentProfile(db *gorm.DB, clientUUID string) (DeploymentProfile, bo
 	}
 	// The billing editor can also change this value, so the client column is
 	// authoritative for monthly rotation.
-	profile.EnableMonthRotate = client.TrafficResetDay != nil && *client.TrafficResetDay > 0
-	if profile.EnableMonthRotate {
-		profile.MonthRotate = *client.TrafficResetDay
-	} else {
-		profile.MonthRotate = 0
-	}
+	overlayTrafficResetFromClient(&profile, client)
 	return profile, true, nil
 }
 
@@ -173,16 +319,12 @@ func saveDeploymentProfileForDispatch(db *gorm.DB, clientUUID string, profile De
 	if err != nil {
 		return DeploymentProfile{}, DeploymentDeliveryState{}, false, fmt.Errorf("encode deployment profile: %w", err)
 	}
-	resetDay := 0
-	if profile.EnableMonthRotate {
-		resetDay = profile.MonthRotate
-	}
 	now := time.Now().UTC()
 	var savedRow models.ClientDeploymentProfile
 	runtimeChanged := false
 	err = db.Transaction(func(tx *gorm.DB) error {
 		var client models.Client
-		if err := tx.Select("uuid", "traffic_reset_day").First(&client, "uuid = ?", clientUUID).Error; err != nil {
+		if err := tx.Select("uuid", "traffic_reset_day", "traffic_reset_time", "traffic_reset_timezone").First(&client, "uuid = ?", clientUUID).Error; err != nil {
 			return err
 		}
 
@@ -203,12 +345,7 @@ func saveDeploymentProfileForDispatch(db *gorm.DB, clientUUID string, profile De
 			if err := normalizeDeploymentProfile(&previous); err != nil {
 				return fmt.Errorf("validate existing deployment profile: %w", err)
 			}
-			previous.EnableMonthRotate = client.TrafficResetDay != nil && *client.TrafficResetDay > 0
-			if previous.EnableMonthRotate {
-				previous.MonthRotate = *client.TrafficResetDay
-			} else {
-				previous.MonthRotate = 0
-			}
+			overlayTrafficResetFromClient(&previous, client)
 			runtimeChanged = !reflect.DeepEqual(previous.RuntimeConfig(), profile.RuntimeConfig()) ||
 				existing.DeliveryStatus == DeploymentDeliveryFailed
 		}
@@ -236,7 +373,7 @@ func saveDeploymentProfileForDispatch(db *gorm.DB, clientUUID string, profile De
 			row.SentAt = nil
 			row.FinishedAt = nil
 		}
-		if err := tx.Model(&models.Client{}).Where("uuid = ?", clientUUID).Update("traffic_reset_day", resetDay).Error; err != nil {
+		if err := tx.Model(&models.Client{}).Where("uuid = ?", clientUUID).Updates(trafficResetClientUpdates(profile)).Error; err != nil {
 			return err
 		}
 		if err := tx.Clauses(clause.OnConflict{
@@ -403,6 +540,16 @@ func normalizeDeploymentProfile(profile *DeploymentProfile) error {
 	} else {
 		profile.MonthRotate = 0
 	}
+	clock, err := trafficreset.NormalizeClock(profile.MonthRotateTime)
+	if err != nil {
+		return err
+	}
+	timezone, err := trafficreset.NormalizeTimezone(profile.MonthRotateTimezone)
+	if err != nil {
+		return err
+	}
+	profile.MonthRotateTime = clock
+	profile.MonthRotateTimezone = timezone
 	return nil
 }
 
@@ -428,6 +575,14 @@ func (profile DeploymentProfile) RuntimeConfig() v2.ConfigParams {
 	if profile.EnableMonthRotate {
 		monthRotate = profile.MonthRotate
 	}
+	clock := profile.MonthRotateTime
+	if clock == "" {
+		clock = trafficreset.DefaultTime
+	}
+	timezone := profile.MonthRotateTimezone
+	if timezone == "" {
+		timezone = trafficreset.DefaultTimezone
+	}
 	includeNics := ""
 	if profile.EnableIncludeNics {
 		includeNics = profile.IncludeNics
@@ -443,13 +598,15 @@ func (profile DeploymentProfile) RuntimeConfig() v2.ConfigParams {
 	memoryIncludeCache := profile.MemoryIncludeCache
 	enableGPU := profile.EnableGPU
 	return v2.ConfigParams{
-		MonthRotate:        &monthRotate,
-		Interval:           &interval,
-		IncludeNics:        &includeNics,
-		ExcludeNics:        &excludeNics,
-		IncludeMountpoints: &includeMountpoints,
-		MemoryIncludeCache: &memoryIncludeCache,
-		EnableGPU:          &enableGPU,
+		MonthRotate:         &monthRotate,
+		MonthRotateTime:     &clock,
+		MonthRotateTimezone: &timezone,
+		Interval:            &interval,
+		IncludeNics:         &includeNics,
+		ExcludeNics:         &excludeNics,
+		IncludeMountpoints:  &includeMountpoints,
+		MemoryIncludeCache:  &memoryIncludeCache,
+		EnableGPU:           &enableGPU,
 	}
 }
 
@@ -461,6 +618,12 @@ func deploymentProfileFromRuntime(platform string, config v2.ConfigParams) (Depl
 		}
 		profile.EnableMonthRotate = *config.MonthRotate > 0
 		profile.MonthRotate = *config.MonthRotate
+	}
+	if config.MonthRotateTime != nil {
+		profile.MonthRotateTime = *config.MonthRotateTime
+	}
+	if config.MonthRotateTimezone != nil {
+		profile.MonthRotateTimezone = *config.MonthRotateTimezone
 	}
 	if config.Interval != nil {
 		if *config.Interval < 1 || *config.Interval > 3600 {
@@ -521,12 +684,11 @@ func adoptDeploymentRuntimeConfig(db *gorm.DB, clientUUID, platform string, conf
 	adopted := false
 	err = db.Transaction(func(tx *gorm.DB) error {
 		var client models.Client
-		if err := tx.Select("uuid", "traffic_reset_day").First(&client, "uuid = ?", clientUUID).Error; err != nil {
+		if err := tx.Select("uuid", "traffic_reset_day", "traffic_reset_time", "traffic_reset_timezone").First(&client, "uuid = ?", clientUUID).Error; err != nil {
 			return err
 		}
 		if client.TrafficResetDay != nil {
-			reported.EnableMonthRotate = *client.TrafficResetDay > 0
-			reported.MonthRotate = *client.TrafficResetDay
+			overlayTrafficResetFromClient(&reported, client)
 		}
 		if err := normalizeDeploymentProfile(&reported); err != nil {
 			return err
@@ -556,8 +718,7 @@ func adoptDeploymentRuntimeConfig(db *gorm.DB, clientUUID, platform string, conf
 				return fmt.Errorf("decode managed deployment profile: %w", err)
 			}
 			if client.TrafficResetDay != nil {
-				managed.EnableMonthRotate = *client.TrafficResetDay > 0
-				managed.MonthRotate = *client.TrafficResetDay
+				overlayTrafficResetFromClient(&managed, client)
 			}
 			if err := normalizeDeploymentProfile(&managed); err != nil {
 				return fmt.Errorf("validate managed deployment profile: %w", err)
@@ -602,12 +763,8 @@ func adoptDeploymentRuntimeConfig(db *gorm.DB, clientUUID, platform string, conf
 		}
 		adopted = true
 		if client.TrafficResetDay == nil {
-			resetDay := 0
-			if reported.EnableMonthRotate {
-				resetDay = reported.MonthRotate
-			}
 			if err := tx.Model(&models.Client{}).Where("uuid = ?", clientUUID).
-				Update("traffic_reset_day", resetDay).Error; err != nil {
+				Updates(trafficResetClientUpdates(reported)).Error; err != nil {
 				return err
 			}
 		}

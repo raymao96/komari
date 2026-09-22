@@ -217,6 +217,7 @@ func TestDeleteClientCleansAllRelatedRowsAndSharedAssignments(t *testing.T) {
 				&models.OfflineNotification{},
 				&models.TrafficReportNotification{},
 				&models.TrafficDailyLedger{},
+				&models.TrafficCycleFirstDay{},
 				&models.LoadNotification{},
 				&models.LoadNotificationState{},
 				&models.MetricCleanupJob{},
@@ -379,6 +380,62 @@ func TestSaveClientPersistsTrafficResetDay(t *testing.T) {
 	require.NoError(t, db.First(&client, "uuid = ?", "node-a").Error)
 	require.NotNil(t, client.TrafficResetDay)
 	assert.Equal(t, 1, *client.TrafficResetDay)
+}
+
+func TestSaveClientPersistsTrafficResetClockAndTimezone(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:client-reset-clock?mode=memory&cache=shared"), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.Client{}))
+	require.NoError(t, db.Create(&models.Client{UUID: "node-a", Token: "token-a", Name: "A"}).Error)
+
+	require.NoError(t, saveClient(db, map[string]interface{}{
+		"uuid":                    "node-a",
+		"traffic_reset_day":       float64(15),
+		"traffic_reset_time":      "12:38:12",
+		"traffic_reset_timezone":  "UTC",
+	}))
+
+	var client models.Client
+	require.NoError(t, db.First(&client, "uuid = ?", "node-a").Error)
+	require.NotNil(t, client.TrafficResetDay)
+	assert.Equal(t, 15, *client.TrafficResetDay)
+	assert.Equal(t, "12:38:12", client.TrafficResetTime)
+	assert.Equal(t, "UTC", client.TrafficResetTimezone)
+}
+
+func TestSaveClientPersistsHKDCurrency(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "lite.db")
+	db, err := gorm.Open(sqlite.Open(databasePath), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.Client{}))
+	require.NoError(t, db.Create(&models.Client{
+		UUID: "client-hkd", Token: "token-hkd", Name: "Hong Kong Server", Currency: "$",
+	}).Error)
+
+	require.NoError(t, saveClient(db, map[string]interface{}{
+		"uuid":     "client-hkd",
+		"currency": " hk$ ",
+	}))
+
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+
+	db, err = gorm.Open(sqlite.Open(databasePath), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	require.NoError(t, err)
+	sqlDB, err = db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
+
+	var client models.Client
+	require.NoError(t, db.First(&client, "uuid = ?", "client-hkd").Error)
+	assert.Equal(t, "HKD", client.Currency)
 }
 
 func TestSaveClientPersistsCADCurrency(t *testing.T) {

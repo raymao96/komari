@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/raymao96/komari/database/accounts"
 	"github.com/raymao96/komari/database/clients"
 	"github.com/raymao96/komari/pkg/config"
 	"github.com/raymao96/komari/pkg/rpc"
@@ -40,7 +39,6 @@ func IdentityMiddleware() gin.HandlerFunc {
 		case rpc.PrincipalUser:
 			if session, err := c.Cookie("session_token"); err == nil && session != "" {
 				c.Set("session", session)
-				accounts.UpdateLatest(session, c.Request.UserAgent(), c.ClientIP())
 			}
 			c.Set("uuid", p.UserUUID)
 		case rpc.PrincipalAgent:
@@ -96,6 +94,8 @@ var publicPaths = []string{
 	"/ping",
 	"/api/public",
 	"/api/login",
+	"/api/session/touch",
+	"/api/passkeys/",
 	"/api/me",
 	"/api/oauth",
 	"/api/oauth_callback",
