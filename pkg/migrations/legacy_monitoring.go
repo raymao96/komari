@@ -5,11 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	logger "github.com/raymao96/komari/utils/log"
 	"math"
 	"sort"
 	"strings"
 	"time"
+
+	logger "github.com/raymao96/komari/utils/log"
 
 	"github.com/raymao96/komari/database/metricstore"
 	"github.com/raymao96/komari/database/models"

@@ -3,8 +3,9 @@ package oauth
 import (
 	"encoding/json"
 	"fmt"
-	logger "github.com/raymao96/komari/utils/log"
 	"sync"
+
+	logger "github.com/raymao96/komari/utils/log"
 
 	"github.com/raymao96/komari/database"
 	"github.com/raymao96/komari/database/models"

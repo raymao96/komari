@@ -28,7 +28,6 @@ const (
 	visitorAuditRateMaxEntries  = 10000
 	visitorAuditLimiterEntryTTL = 10 * time.Minute
 	visitorAuditCleanupInterval = time.Minute
-	visitorAuditMessagePrefix   = "visitor event: "
 	visitorAuditUnknownIPKey    = "<unknown>"
 )
 
@@ -126,7 +125,7 @@ func publicRecordVisitorEvent(ctx context.Context, req *rpc.JsonRpcRequest) (any
 		return nil, rpc.MakeError(rpc.InvalidParams, "Invalid detail", nil)
 	}
 
-	auditlog.Log(ip, uuid, message, "visitor")
+	auditlog.Event(ip, uuid, "visitor", "audit.visitor", map[string]string{"detail": message})
 	return map[string]any{"status": "success"}, nil
 }
 
@@ -241,8 +240,8 @@ func buildVisitorAuditMessage(message visitorAuditMessage) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if len(visitorAuditMessagePrefix)+len(encoded) <= visitorAuditMaxMessageLen {
-			return visitorAuditMessagePrefix + string(encoded), nil
+		if len(encoded) <= visitorAuditMaxMessageLen {
+			return string(encoded), nil
 		}
 
 		if message.Detail != nil && !detailReduced {

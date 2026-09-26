@@ -2,9 +2,10 @@ package notifier
 
 import (
 	"fmt"
-	logger "github.com/raymao96/komari/utils/log"
 	"sync"
 	"time"
+
+	logger "github.com/raymao96/komari/utils/log"
 
 	"github.com/raymao96/komari/database/clients"
 	"github.com/raymao96/komari/database/dbcore"

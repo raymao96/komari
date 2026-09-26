@@ -20,6 +20,7 @@ import (
 	logger "github.com/raymao96/komari/utils/log"
 	agent "github.com/raymao96/komari/web/agent"
 	"github.com/raymao96/komari/web/mcp"
+	"github.com/raymao96/komari/web/passkey"
 	"github.com/raymao96/komari/web/remotectl"
 )
 
@@ -99,7 +100,7 @@ func adminDeleteSession(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc
 	}
 	remotectl.RevokeLogin(params.Session)
 	actor, ip := auditActor(ctx)
-	auditlog.Log(ip, actor, "delete session", "info")
+	auditlog.Event(ip, actor, "info", "audit.session_delete", nil)
 	return nil, nil
 }
 
@@ -109,7 +110,7 @@ func adminDeleteAllSessions(ctx context.Context, _ *rpc.JsonRpcRequest) (any, *r
 	}
 	remotectl.RevokeAll()
 	actor, ip := auditActor(ctx)
-	auditlog.Log(ip, actor, "delete all sessions", "warn")
+	auditlog.Event(ip, actor, "warn", "audit.session_delete_all", nil)
 	return nil, nil
 }
 
@@ -185,6 +186,13 @@ func adminEditSettings(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.
 		}
 		cfg[config.AdminDefaultPageSizeKey] = pageSize
 	}
+	if rawStep, ok := cfg[config.TrafficReminderStepKey]; ok {
+		step, ok := normalizeTrafficReminderStep(rawStep)
+		if !ok {
+			return nil, rpc.MakeError(rpc.InvalidParams, "Traffic reminder step must be an integer between 1 and 100", nil)
+		}
+		cfg[config.TrafficReminderStepKey] = step
+	}
 	if rawTTL, ok := cfg[config.SessionTTLSecondsKey]; ok {
 		ttl, ok := normalizeSessionTTLSeconds(rawTTL)
 		if !ok {
@@ -234,8 +242,22 @@ func adminEditSettings(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.
 		cancel()
 	}
 
+	if closed, err := closingLastSignInMethod(ctx, cfg); err != nil {
+		return nil, rpc.MakeError(rpc.InternalError, "Failed to read sign-in settings: "+err.Error(), nil)
+	} else if closed {
+		return nil, rpc.MakeError(rpc.InvalidParams, "At least one sign-in method must stay enabled", nil)
+	}
+
+	previousSettings, settingsErr := config.GetAll()
+	if settingsErr != nil {
+		previousSettings = map[string]any{}
+	}
 	if err := config.SetMany(cfg); err != nil {
 		return nil, rpc.MakeError(rpc.InternalError, "Failed to update settings: "+err.Error(), nil)
+	}
+	actor, ip := auditActor(ctx)
+	for _, change := range auditlog.SettingChanges(previousSettings, cfg) {
+		auditlog.Event(ip, actor, "info", change.Key, change.Params)
 	}
 	if _, ok := cfg[config.SessionTTLSecondsKey]; ok {
 		if err := accounts.CapLegacySessionExpires(accounts.SessionTTL()); err != nil {
@@ -281,15 +303,6 @@ func adminEditSettings(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.
 		cancel()
 	}
 
-	message := "update settings: "
-	for key := range cfg {
-		message += key + ", "
-	}
-	if len(message) > 2 {
-		message = message[:len(message)-2]
-	}
-	actor, ip := auditActor(ctx)
-	auditlog.Log(ip, actor, message, "info")
 	return nil, nil
 }
 
@@ -300,6 +313,18 @@ func normalizeAdminDefaultPageSize(raw any) (int, bool) {
 		return 0, false
 	}
 	return int(value), true
+}
+
+func normalizeTrafficReminderStep(raw any) (int, bool) {
+	value, ok := raw.(float64)
+	if !ok || math.IsNaN(value) || math.IsInf(value, 0) || math.Trunc(value) != value {
+		return 0, false
+	}
+	step := int(value)
+	if step < 1 || step > 100 {
+		return 0, false
+	}
+	return step, true
 }
 
 func normalizeSessionTTLSeconds(raw any) (int, bool) {
@@ -346,6 +371,38 @@ func mergedMetricConfig(cfg map[string]interface{}) (*metricstore.MetricStoreCon
 	}
 
 	return merged, nil
+}
+
+func signInMethodsAllClosed(avail passkey.SignInAvailability, cfg map[string]any) bool {
+	_, touchPassword := cfg[config.DisablePasswordLoginKey]
+	_, touchOAuth := cfg[config.OAuthEnabledKey]
+	if !touchPassword && !touchOAuth {
+		return false
+	}
+	if touchPassword {
+		avail.PasswordDisabled = toBool(cfg[config.DisablePasswordLoginKey], avail.PasswordDisabled)
+	}
+	if touchOAuth {
+		avail.OAuthEnabled = toBool(cfg[config.OAuthEnabledKey], avail.OAuthEnabled)
+	}
+	return avail.Remaining() == 0
+}
+
+func closingLastSignInMethod(ctx context.Context, cfg map[string]any) (bool, error) {
+	if _, ok := cfg[config.DisablePasswordLoginKey]; !ok {
+		if _, ok := cfg[config.OAuthEnabledKey]; !ok {
+			return false, nil
+		}
+	}
+	meta := rpc.MetaFromContext(ctx)
+	if meta == nil || meta.UserUUID == "" {
+		return false, errors.New("missing signed-in account")
+	}
+	avail, err := passkey.CurrentSignInAvailability(meta.UserUUID)
+	if err != nil {
+		return false, err
+	}
+	return signInMethodsAllClosed(avail, cfg), nil
 }
 
 func toBool(v any, fallback bool) bool {
@@ -415,7 +472,7 @@ func adminClearAllRecords(ctx context.Context, _ *rpc.JsonRpcRequest) (any, *rpc
 	records.DeleteAll()
 	tasks.DeleteAllPingRecords()
 	actor, ip := auditActor(ctx)
-	auditlog.Log(ip, actor, "clear all records", "info")
+	auditlog.Event(ip, actor, "info", "audit.records_clear_all", nil)
 	return nil, nil
 }
 
@@ -446,6 +503,6 @@ func adminOrderClients(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.
 		return nil, rpc.MakeError(rpc.InternalError, "Failed to update client weight: "+err.Error(), nil)
 	}
 	actor, ip := auditActor(ctx)
-	auditlog.Log(ip, actor, "order clients", "info")
+	auditlog.Event(ip, actor, "info", "audit.order_clients", nil)
 	return nil, nil
 }

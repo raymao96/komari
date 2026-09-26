@@ -10,6 +10,3 @@ import (
 	_ "github.com/raymao96/komari/utils/messageSender/telegram"
 	_ "github.com/raymao96/komari/utils/messageSender/webhook"
 )
-
-func All() {
-}

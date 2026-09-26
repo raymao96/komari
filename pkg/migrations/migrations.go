@@ -3,12 +3,13 @@ package migrations
 import (
 	"encoding/json"
 	"fmt"
-	logger "github.com/raymao96/komari/utils/log"
 	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	logger "github.com/raymao96/komari/utils/log"
 
 	"github.com/raymao96/komari/database/models"
 	appconfig "github.com/raymao96/komari/pkg/config"

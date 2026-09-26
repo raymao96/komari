@@ -143,31 +143,6 @@ func replaceCompletedFile(tmp, dest string) error {
 }
 
 // removeAllInDirExcept 删除 dir 下除 exclude 指定绝对路径外的所有文件和文件夹
-func removeAllInDirExcept(dir string, exclude map[string]struct{}) error {
-	absDir, err := filepath.Abs(dir)
-	if err != nil {
-		return err
-	}
-	normExclude := make(map[string]struct{}, len(exclude))
-	for p := range exclude {
-		abs, _ := filepath.Abs(p)
-		normExclude[abs] = struct{}{}
-	}
-	entries, err := os.ReadDir(absDir)
-	if err != nil {
-		return err
-	}
-	for _, e := range entries {
-		full := filepath.Join(absDir, e.Name())
-		if _, ok := normExclude[full]; ok {
-			continue
-		}
-		if err := os.RemoveAll(full); err != nil {
-			return err
-		}
-	}
-	return nil
-}
 
 // unzipToDir 将 zipPath 解压到 dstDir，包含路径遍历保护
 func unzipToDir(zipPath, dstDir string) error {
@@ -773,6 +748,8 @@ func resolveDatabaseFile() string {
 //   - 配置中版本与当前一致：无需备份。
 //
 // 备份失败不阻止启动，但打印明确错误；备份成功（或无需备份）后写入/更新版本。
+// 新的 upgrade-*.zip 写完之后，只保留这一份。写失败或文件为空时不删已有备份。
+// 回滚用的 self-update 目录不在这里清理。
 func backupOnVersionUpgrade() {
 	if versionID == "" {
 		return
@@ -812,8 +789,43 @@ func backupOnVersionUpgrade() {
 		return
 	}
 	logger.Infof("dbcore", "[upgrade-backup] ./data backed up to %s before upgrade (from %q to %q)", bakPath, prevVersion, versionID)
+	pruneUpgradeBackups("./backup", bakPath)
 
 	writeVersionMarker()
+}
+
+// pruneUpgradeBackups removes older upgrade-*.zip files after the new archive
+// is on disk. Other backup files and directories are left alone. If the new
+// archive is missing or empty, nothing is deleted.
+func pruneUpgradeBackups(dir, keep string) {
+	keepPath, err := filepath.Abs(keep)
+	if err != nil {
+		logger.Errorf("dbcore", "[upgrade-backup] failed to resolve new backup path: %v", err)
+		return
+	}
+	info, err := os.Stat(keepPath)
+	if err != nil || info.IsDir() || info.Size() == 0 {
+		logger.Errorf("dbcore", "[upgrade-backup] keeping older backups because %s is not a completed archive", keep)
+		return
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		logger.Errorf("dbcore", "[upgrade-backup] failed to list backups: %v", err)
+		return
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasPrefix(name, "upgrade-") || !strings.HasSuffix(name, ".zip") {
+			continue
+		}
+		path, err := filepath.Abs(filepath.Join(dir, name))
+		if err != nil || path == keepPath {
+			continue
+		}
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			logger.Errorf("dbcore", "[upgrade-backup] failed to remove old backup %s: %v", path, err)
+		}
+	}
 }
 
 // writeVersionMarker 将当前 versionID 写入配置库。

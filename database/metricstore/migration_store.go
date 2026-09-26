@@ -3,9 +3,10 @@ package metricstore
 import (
 	"context"
 	"fmt"
-	logger "github.com/raymao96/komari/utils/log"
 	"strings"
 	"time"
+
+	logger "github.com/raymao96/komari/utils/log"
 
 	"github.com/raymao96/komari/pkg/metric"
 )

@@ -2,8 +2,9 @@ package metricstore
 
 import (
 	"fmt"
-	logger "github.com/raymao96/komari/utils/log"
 	"strings"
+
+	logger "github.com/raymao96/komari/utils/log"
 
 	"github.com/raymao96/komari/pkg/config"
 )
