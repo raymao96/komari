@@ -187,13 +187,14 @@ func callTool(c *gin.Context, lease models.MCPLease, name string, args map[strin
 }
 
 func authorizationPayload(lease models.MCPLease, now time.Time) gin.H {
-	remaining := int(lease.ExpiresAt.Sub(now) / time.Second)
+	remaining := int64(lease.ExpiresAt.Sub(now) / time.Second)
 	if remaining < 0 {
 		remaining = 0
 	}
 	return gin.H{
 		"lease_id":          lease.ID,
 		"mode":              lease.Mode,
+		"long_term":         lease.LongTerm,
 		"expires_at":        lease.ExpiresAt.UTC().Format(time.RFC3339),
 		"remaining_seconds": remaining,
 		"target_uuids":      parseTargetUUIDs(lease.TargetUUIDs),
