@@ -46,6 +46,7 @@ import (
 	frontendpublic "github.com/raymao96/komari/web/public"
 	"github.com/raymao96/komari/web/remotectl"
 	"github.com/raymao96/komari/web/router"
+	"github.com/raymao96/komari/web/scheduledexec"
 	"github.com/raymao96/komari/web/security"
 	storageupdateweb "github.com/raymao96/komari/web/storageupdate"
 	upgradeweb "github.com/raymao96/komari/web/update"
@@ -883,6 +884,8 @@ func registerScheduledWork() {
 	if err := d_notification.EnsureTrafficReportMetricRetention(context.Background()); err != nil {
 		logger.Errorf("server", "Failed to ensure traffic report metric retention: %v", err)
 	}
+
+	scheduledexec.Start()
 
 	if err := corn.AddFunc("records:cleanup", "@every 30m", cleanupScheduledData); err != nil {
 		logger.ErrorArgs("server", "Failed to add cleanup scheduled task:", err)

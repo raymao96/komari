@@ -51,6 +51,10 @@ type Event struct {
 	Params    any       `json:"params,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	ExpiresAt time.Time `json:"expires_at"`
+	// HandedOff is set once a websocket send succeeds or an agent pull copies
+	// the event. It stays on the queued copy until ACK. Lack of an ACK does
+	// not mean the agent never received the command.
+	HandedOff bool `json:"-"`
 }
 
 type RPCError struct {
@@ -70,6 +74,9 @@ const (
 	InterruptedTaskResultText        = "execution status unknown"
 	DeliveryTimeoutTaskResult        = "delivery timeout"
 	RemoteManagementClosedTaskResult = "远程管理已关闭，任务未投递/已取消"
+	// ScheduledExecStoppedTaskResult is stored when a schedule is disabled, deleted,
+	// or stopped by a credential change before the agent receives the command.
+	ScheduledExecStoppedTaskResult = "定时任务已停用，命令未投递/已取消"
 )
 
 type TaskResultParams struct {
@@ -90,8 +97,17 @@ type BasicInfoParams struct {
 type PingResultParams struct {
 	TaskID     uint      `json:"task_id"`
 	PingType   string    `json:"ping_type"`
-	Value      int       `json:"value"`
+	Value      float64   `json:"value"`              // 延迟，单位毫秒。失败为负数。旧版 Agent 只发这个整数。
+	ValueMS    *float64  `json:"value_ms,omitempty"` // 新版 Agent 的小数毫秒。有则优先使用。
 	FinishedAt time.Time `json:"finished_at"`
+}
+
+// LatencyMS 优先使用新版 Agent 上报的小数毫秒，否则使用 value。
+func (p PingResultParams) LatencyMS() float64 {
+	if p.ValueMS != nil {
+		return *p.ValueMS
+	}
+	return p.Value
 }
 
 type RouteHop struct {
@@ -194,16 +210,16 @@ type RemoteRequestParams struct {
 }
 
 type ConfigParams struct {
-	Revision             uint64   `json:"revision,omitempty"`
-	MonthRotate          *int     `json:"month_rotate,omitempty"`
-	MonthRotateTime      *string  `json:"month_rotate_time,omitempty"`
-	MonthRotateTimezone  *string  `json:"month_rotate_timezone,omitempty"`
-	Interval             *float64 `json:"interval,omitempty"`
-	IncludeNics        *string  `json:"include_nics,omitempty"`
-	ExcludeNics        *string  `json:"exclude_nics,omitempty"`
-	IncludeMountpoints *string  `json:"include_mountpoints,omitempty"`
-	MemoryIncludeCache *bool    `json:"memory_include_cache,omitempty"`
-	EnableGPU          *bool    `json:"enable_gpu,omitempty"`
+	Revision            uint64   `json:"revision,omitempty"`
+	MonthRotate         *int     `json:"month_rotate,omitempty"`
+	MonthRotateTime     *string  `json:"month_rotate_time,omitempty"`
+	MonthRotateTimezone *string  `json:"month_rotate_timezone,omitempty"`
+	Interval            *float64 `json:"interval,omitempty"`
+	IncludeNics         *string  `json:"include_nics,omitempty"`
+	ExcludeNics         *string  `json:"exclude_nics,omitempty"`
+	IncludeMountpoints  *string  `json:"include_mountpoints,omitempty"`
+	MemoryIncludeCache  *bool    `json:"memory_include_cache,omitempty"`
+	EnableGPU           *bool    `json:"enable_gpu,omitempty"`
 }
 
 type ConfigResultParams struct {

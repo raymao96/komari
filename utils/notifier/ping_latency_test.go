@@ -74,6 +74,25 @@ func TestEvaluateFixedLatencyThresholds(t *testing.T) {
 	low := evaluateLatencyAnomaly(rule, coveredLatencyStats(120, 105, 150, 18, windowStart, now), metricstore.PingBaselineCandidate{}, windowStart, now, 0)
 	assert.Equal(t, pingLatencyNotificationAlertLow, low.Action)
 
+	zero := evaluateLatencyAnomaly(rule, coveredLatencyStats(0, 0, 0, 18, windowStart, now), metricstore.PingBaselineCandidate{}, windowStart, now, 0)
+	assert.Equal(t, pingLatencyNotificationNone, zero.Action)
+	assert.Equal(t, models.LatencyAlertNormal, zero.Notification.LatencyAlertState)
+
+	subCentisecond := fixedLatencyRule()
+	subCentisecond.LowLatencyThresholdMs = 0.01
+	subCentisecond.HighLatencyThresholdMs = 10
+	roundedOff := evaluateLatencyAnomaly(subCentisecond, coveredLatencyStats(0.004, 0.004, 0.004, 18, windowStart, now), metricstore.PingBaselineCandidate{}, windowStart, now, 0)
+	assert.Equal(t, pingLatencyNotificationNone, roundedOff.Action)
+	assert.Equal(t, 0.0, roundedOff.Notification.LatencyLatestAverageMs)
+
+	rule.LatencyAlertState = models.LatencyAlertLow
+	rule.LatencyIncidentNotified = true
+	cleared := evaluateLatencyAnomaly(rule, coveredLatencyStats(0, 0, 0, 18, windowStart, now), metricstore.PingBaselineCandidate{}, windowStart, now, 0)
+	assert.Equal(t, pingLatencyNotificationRecovery, cleared.Action)
+	assert.Equal(t, models.LatencyAlertNormal, cleared.Notification.LatencyAlertState)
+	rule.LatencyAlertState = models.LatencyAlertNormal
+	rule.LatencyIncidentNotified = false
+
 	spike := evaluateLatencyAnomaly(rule, coveredLatencyStats(160, 145, 210, 18, windowStart, now), metricstore.PingBaselineCandidate{}, windowStart, now, 0)
 	assert.Equal(t, pingLatencyNotificationNone, spike.Action)
 
@@ -275,20 +294,20 @@ func TestFormatPingLatencyMessage(t *testing.T) {
 	stats.Total = 30
 	stats.Lost = 2
 	message := formatPingLatencyMessage(notification, stats, pingLatencyNotificationAlertHigh)
-	for _, expected := range []string{"延迟监测告警 · 延迟异常", "东京节点", "业务 API", "自适应基线", "126.4 ms", "100.0 ms", "20.0%", ">= 120.0 ms"} {
+	for _, expected := range []string{"延迟监测告警 · 延迟异常", "东京节点", "业务 API", "自适应基线", "126.40 ms", "100.00 ms", "20.0%", ">= 120.00 ms"} {
 		if !strings.Contains(message, expected) {
 			t.Fatalf("message %q does not contain %q", message, expected)
 		}
 	}
-	assert.NotContains(t, message, "90.0 ms")
-	assert.NotContains(t, message, "110.0 ms")
+	assert.NotContains(t, message, "90.00 ms")
+	assert.NotContains(t, message, "110.00 ms")
 
 	fixed := fixedLatencyRule()
 	fixed.ClientInfo = models.Client{Name: "东京节点"}
 	fixed.Task.Name = "业务 API"
 	fixed.Task.Target = "api.example.com"
 	fixedMessage := formatPingLatencyMessage(fixed, stats, pingLatencyNotificationAlertHigh)
-	for _, expected := range []string{"固定阈值", "基线：150.0 ms", ">= 180.0 ms"} {
+	for _, expected := range []string{"固定阈值", "基线：150.00 ms", ">= 180.00 ms"} {
 		if !strings.Contains(fixedMessage, expected) {
 			t.Fatalf("fixed message %q does not contain %q", fixedMessage, expected)
 		}
@@ -495,6 +514,34 @@ func TestStuckFrozenBaselineBecomesRecoveryHold(t *testing.T) {
 	require.NotNil(t, got.AdaptiveBaselineMs)
 	assert.Equal(t, 100.0, *got.AdaptiveBaselineMs)
 	require.NotNil(t, got.AdaptiveBaselineResumeAt)
+}
+
+func TestCentisecondBandStillAlertsAndRecovers(t *testing.T) {
+	now := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	windowStart := now.Add(-5 * time.Minute)
+	rule := adaptiveLatencyRule(0.02)
+
+	low, high, ok := latencyThresholds(rule)
+	require.True(t, ok)
+	assert.Less(t, low, 0.02)
+	assert.Greater(t, high, 0.02)
+
+	highAlert := evaluateLatencyAnomaly(rule, coveredLatencyStats(1, 1, 1, 18, windowStart, now), metricstore.PingBaselineCandidate{}, windowStart, now, 0)
+	assert.Equal(t, pingLatencyNotificationAlertHigh, highAlert.Action)
+
+	zero := evaluateLatencyAnomaly(rule, coveredLatencyStats(0, 0, 0, 18, windowStart, now), metricstore.PingBaselineCandidate{}, windowStart, now, 0)
+	assert.Equal(t, pingLatencyNotificationNone, zero.Action)
+	assert.Equal(t, models.LatencyAlertNormal, zero.Notification.LatencyAlertState)
+
+	rule.LatencyAlertState = models.LatencyAlertHigh
+	rule.LatencyIncidentNotified = true
+	recovered := evaluateLatencyAnomaly(rule, coveredLatencyStats(0.02, 0.02, 0.02, 18, windowStart, now), metricstore.PingBaselineCandidate{}, windowStart, now, 0)
+	assert.Equal(t, pingLatencyNotificationRecovery, recovered.Action)
+	assert.Equal(t, models.LatencyAlertNormal, recovered.Notification.LatencyAlertState)
+
+	tiny := adaptiveLatencyRule(0.01)
+	one := evaluateLatencyAnomaly(tiny, coveredLatencyStats(1, 1, 1, 18, windowStart, now), metricstore.PingBaselineCandidate{}, windowStart, now, 0)
+	assert.Equal(t, pingLatencyNotificationAlertHigh, one.Action)
 }
 
 func widenedAdaptiveRule(resume time.Time) models.PingLossNotification {
