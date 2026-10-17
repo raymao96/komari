@@ -133,6 +133,9 @@ func registerAdminRoutes(r *gin.Engine) {
 		theme.POST("/delete", admin.DeleteTheme)
 		theme.GET("/set", admin.SetTheme)
 		theme.POST("/update", admin.UpdateTheme)
+		theme.POST("/update-all", admin.UpdateAllThemes)
+		theme.GET("/auto-update", admin.GetThemeAutoUpdate)
+		theme.POST("/auto-update", admin.SetThemeAutoUpdate)
 		theme.POST("/import", admin.ImportTheme)
 		theme.POST("/settings", admin.UpdateThemeSettings)
 		theme.GET("/market/sources", admin.ListThemeMarketSources)
@@ -269,6 +272,8 @@ func registerAdminRoutes(r *gin.Engine) {
 	// notifications
 	notificationGroup := g.Group("/notification")
 	{
+		notificationGroup.GET("/center", jsonRpc.Bind("admin:listAlertCenter"))
+		notificationGroup.POST("/center/silence", jsonRpc.Bind("admin:setAlertCenterSilence"))
 		notificationGroup.GET("/offline", jsonRpc.Bind("admin:listOfflineNotifications"))
 		notificationGroup.POST("/offline/edit", jsonRpc.Bind("admin:editOfflineNotification"))
 		notificationGroup.POST("/offline/enable", jsonRpc.Bind("admin:enableOfflineNotification"))

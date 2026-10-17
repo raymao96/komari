@@ -198,6 +198,7 @@ func authorizationPayload(lease models.MCPLease, now time.Time) gin.H {
 		"expires_at":        lease.ExpiresAt.UTC().Format(time.RFC3339),
 		"remaining_seconds": remaining,
 		"target_uuids":      parseTargetUUIDs(lease.TargetUUIDs),
+		"all_nodes":         lease.AllNodes,
 		"max_concurrency":   lease.MaxConcurrency,
 		"note":              lease.Note,
 		"client_id":         lease.OAuthClientID,
@@ -205,14 +206,22 @@ func authorizationPayload(lease models.MCPLease, now time.Time) gin.H {
 }
 
 func listAuthorizedAgents(lease models.MCPLease, query string) (any, error) {
-	ids := parseTargetUUIDs(lease.TargetUUIDs)
-	nodes, err := clients.GetClientBasicInfoByUUIDs(ids)
+	var nodes []models.Client
+	var err error
+	if lease.AllNodes {
+		nodes, err = clients.GetAllClientBasicInfo()
+	} else {
+		nodes, err = clients.GetClientBasicInfoByUUIDs(parseTargetUUIDs(lease.TargetUUIDs))
+	}
 	if err != nil {
 		return nil, err
 	}
 	query = strings.ToLower(strings.TrimSpace(query))
 	out := make([]gin.H, 0, len(nodes))
 	for _, node := range nodes {
+		if lease.AllNodes && (remote.AgentRemoteAllowed(node) != nil || !agentSupportsMCP(node)) {
+			continue
+		}
 		if query != "" && !strings.Contains(strings.ToLower(node.Name+" "+node.UUID+" "+node.OS), query) {
 			continue
 		}

@@ -1,6 +1,9 @@
 package mcp
 
 import (
+	"time"
+
+	"github.com/raymao96/komari/database/models"
 	v2 "github.com/raymao96/komari/protocol/v2"
 	agent_runtime "github.com/raymao96/komari/web/agent"
 	"github.com/raymao96/komari/web/api/remote"
@@ -9,7 +12,7 @@ import (
 func dispatchMCPExec(uuid string, params v2.MCPExecParams) bool {
 	queued := false
 	accepted := agent_runtime.GuardRemoteDelivery(func() bool {
-		return remote.RemoteManagementEnabled() && mcpEnabled()
+		return mcpDispatchAllowed(params.LeaseID, uuid, params.ExpiresAt)
 	}, func() {
 		event := agent_runtime.EnqueueV2Event(uuid, v2.MethodAgentMCPExec, params)
 		queued = event.ID != ""
@@ -26,7 +29,7 @@ func dispatchMCPExec(uuid string, params v2.MCPExecParams) bool {
 func dispatchMCPFile(uuid string, params v2.MCPFileParams) bool {
 	queued := false
 	accepted := agent_runtime.GuardRemoteDelivery(func() bool {
-		return remote.RemoteManagementEnabled() && mcpEnabled()
+		return mcpDispatchAllowed(params.LeaseID, uuid, params.ExpiresAt)
 	}, func() {
 		event := agent_runtime.EnqueueV2Event(uuid, v2.MethodAgentMCPFile, params)
 		queued = event.ID != ""
@@ -38,6 +41,26 @@ func dispatchMCPFile(uuid string, params v2.MCPFileParams) bool {
 		}
 	})
 	return accepted && queued
+}
+
+func mcpDispatchAllowed(leaseID, uuid string, expiresAt time.Time) bool {
+	if !remote.RemoteManagementEnabled() || !mcpEnabled() {
+		return false
+	}
+	lease, err := loadLiveLease(leaseID, time.Now().UTC())
+	if err != nil {
+		return false
+	}
+	return mcpDispatchMatchesLease(lease, uuid, expiresAt)
+}
+
+func mcpDispatchMatchesLease(lease models.MCPLease, uuid string, expiresAt time.Time) bool {
+	if expiresAt.IsZero() || !leaseContainsNode(lease, uuid) {
+		return false
+	}
+	// In-flight params may still carry an earlier expiry after an extension.
+	// Reject only work that claims to outlive the current grant.
+	return !expiresAt.After(lease.ExpiresAt)
 }
 
 func mcpMethods() []string {

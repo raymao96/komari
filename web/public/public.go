@@ -52,7 +52,7 @@ const themeBundleMigrationKey = "theme_bundle_migration_v1"
 
 const currentThemeBundleMigration = 12
 
-const adminApplicationTitle = "Lite"
+const adminApplicationTitle = "轻量.Lite Monitor"
 
 const themeChangeReloadScript = `<script>(()=>{window.addEventListener("storage",(event)=>{if(event.key==="lite-active-theme-changed"||event.key==="komari-active-theme-changed"){window.location.reload();}});})();</script>`
 
@@ -93,6 +93,23 @@ var (
 	themeVersionPattern          = regexp.MustCompile(`^(\d+)(?:\.(\d+))?(?:\.(\d+))?`)
 )
 
+const systemServiceWorkerCleanupMarker = "data-lite-sw-cleanup"
+
+const systemServiceWorkerCleanupScript = `<script ` + systemServiceWorkerCleanupMarker + `>(()=>{try{if(navigator.serviceWorker){navigator.serviceWorker.getRegistrations().then((rs)=>rs.forEach((r)=>r.unregister()));}if(window.caches){caches.keys().then((keys)=>keys.forEach((k)=>caches.delete(k)));}}catch(e){}})();</script>`
+
+func injectSystemServiceWorkerCleanup(htmlStr string) string {
+	if strings.Contains(htmlStr, systemServiceWorkerCleanupMarker) {
+		return htmlStr
+	}
+	if location := headClosePattern.FindStringIndex(htmlStr); location != nil {
+		return htmlStr[:location[0]] + systemServiceWorkerCleanupScript + htmlStr[location[0]:]
+	}
+	if location := bodyClosePattern.FindStringIndex(htmlStr); location != nil {
+		return htmlStr[:location[0]] + systemServiceWorkerCleanupScript + htmlStr[location[0]:]
+	}
+	return htmlStr + systemServiceWorkerCleanupScript
+}
+
 func injectThemeChangeReload(html string) string {
 	if strings.Contains(html, themeChangeReloadScript) {
 		return html
@@ -118,7 +135,7 @@ func injectCustomHTML(htmlStr, customHead, customBody string) string {
 func renderDocumentTitle(htmlStr, title string) string {
 	title = strings.TrimSpace(title)
 	if title == "" {
-		title = "Lite"
+		title = config.DefaultSitename
 	}
 
 	titleTag := "<title>" + html.EscapeString(title) + "</title>"
@@ -141,7 +158,7 @@ func renderPublicDocumentTitle(htmlStr, title string) string {
 
 	title = strings.TrimSpace(title)
 	if title == "" {
-		title = "Lite"
+		title = config.DefaultSitename
 	}
 	encodedTitle, _ := json.Marshal(title)
 	script := `<script ` + documentTitleSyncMarker + `>(()=>{const expectedTitle=` + string(encodedTitle) + `;const syncTitle=()=>{if(document.title!==expectedTitle){document.title=expectedTitle;}};syncTitle();if(document.head){new MutationObserver(syncTitle).observe(document.head,{childList:true,subtree:true,characterData:true});}})();</script>`
@@ -196,7 +213,7 @@ func renderMobileChromeMeta(htmlStr, appleStatusBar string) string {
 func renderApplicationIdentityWithTitle(htmlStr, title string, synchronizeTitle bool) string {
 	title = strings.TrimSpace(title)
 	if title == "" {
-		title = "Lite"
+		title = config.DefaultSitename
 	}
 
 	// Opaque status bar so iOS 18 can follow live hex theme-color on public
@@ -237,13 +254,13 @@ func renderApplicationIdentity(htmlStr, title string) string {
 }
 
 func renderSystemApplicationIdentity(htmlStr, title string) string {
-	return renderApplicationIdentityWithTitle(htmlStr, title, false)
+	return injectSystemServiceWorkerCleanup(renderApplicationIdentityWithTitle(htmlStr, title, false))
 }
 
 func renderWebAppManifest(siteName, description string) webAppManifest {
 	siteName = strings.TrimSpace(siteName)
 	if siteName == "" {
-		siteName = "Lite"
+		siteName = config.DefaultSitename
 	}
 	description = strings.TrimSpace(description)
 	if description == "" {
@@ -652,7 +669,7 @@ func Static(r *gin.RouterGroup, noRoute func(handlers ...gin.HandlerFunc)) {
 			config.DescriptionKey: config.DefaultSiteDescription,
 			config.CustomHeadKey:  "",
 			config.CustomBodyKey:  "",
-			config.SitenameKey:    "Lite",
+			config.SitenameKey:    config.DefaultSitename,
 			config.ThemeKey:       DefaultTheme,
 		})
 		return cfg
@@ -838,7 +855,7 @@ func Static(r *gin.RouterGroup, noRoute func(handlers ...gin.HandlerFunc)) {
 			}
 		}()
 		reqPath := c.Request.URL.Path
-		if isLegacyAdminDashboardPath(reqPath) {
+		if isLegacyAdminDashboardPath(reqPath) || isVendoredLegacyAdminAppDocument(reqPath) {
 			redirectLegacyAdminDashboard(c)
 			return
 		}
@@ -896,7 +913,7 @@ func applyPrivilegedPageHeaders(c *gin.Context) {
 }
 
 func isPrivateApplicationPath(requestPath string) bool {
-	for _, prefix := range []string{"/admin", "/terminal", "/install", "/manage"} {
+	for _, prefix := range []string{"/admin-app", "/admin", "/terminal", "/install", "/manage"} {
 		if requestPath == prefix || strings.HasPrefix(requestPath, prefix+"/") {
 			return true
 		}
@@ -913,11 +930,26 @@ func isLegacyAdminDashboardPath(requestPath string) bool {
 	return cleaned == "/admin/dashboard"
 }
 
+func isVendoredLegacyAdminAppPath(requestPath string) bool {
+	cleaned := path.Clean("/" + strings.TrimPrefix(requestPath, "/"))
+	return cleaned == "/admin-app" || strings.HasPrefix(cleaned, "/admin-app/")
+}
+
+func isVendoredLegacyAdminAppDocument(requestPath string) bool {
+	if !isVendoredLegacyAdminAppPath(requestPath) {
+		return false
+	}
+	ext := strings.ToLower(filepath.Ext(requestPath))
+	return ext == "" || ext == ".html" || ext == ".htm"
+}
+
 func redirectLegacyAdminDashboard(c *gin.Context) {
 	target := "/admin"
 	if raw := c.Request.URL.RawQuery; raw != "" {
 		target += "?" + raw
 	}
+	applyPrivilegedPageHeaders(c)
+	c.Header("Clear-Site-Data", `"cache"`)
 	c.Redirect(http.StatusFound, target)
 }
 
